@@ -74,6 +74,11 @@ export const conversationsAPI = {
     return response.data;
   },
 
+  createConversation: async (participantId) => {
+    const response = await api.post('/conversations', { participantId });
+    return response.data;
+  },
+
   getConversationMessages: async (conversationId) => {
     const response = await api.get(`/conversations/${conversationId}/messages`);
     return response.data;
@@ -81,6 +86,11 @@ export const conversationsAPI = {
 
   sendMessage: async (conversationId, messageData) => {
     const response = await api.post(`/conversations/${conversationId}/messages`, messageData);
+    return response.data;
+  },
+
+  markMessageAsRead: async (conversationId, messageId) => {
+    const response = await api.put(`/conversations/${conversationId}/messages/${messageId}/read`);
     return response.data;
   },
 };

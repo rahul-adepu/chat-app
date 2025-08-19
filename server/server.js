@@ -5,6 +5,7 @@ import cors from "cors";
 
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
+import conversationsRoutes from "./routes/conversations.js";
 
 dotenv.config({ quiet: true });
 
@@ -15,6 +16,7 @@ app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/users", usersRoutes);
+app.use("/conversations", conversationsRoutes);
 
 mongoose
   .connect(process.env.MONGO_URI)
