@@ -44,7 +44,13 @@ export default function HomeScreen() {
   };
 
   const renderUser = ({ item }) => (
-    <TouchableOpacity style={styles.userItem}>
+    <TouchableOpacity 
+      style={styles.userItem}
+      onPress={() => router.push({
+        pathname: '/chat',
+        params: { username: item.username, userId: item._id }
+      })}
+    >
       <View style={styles.avatarContainer}>
         <Text style={styles.avatarText}>{item.username.charAt(0).toUpperCase()}</Text>
       </View>
