@@ -1,0 +1,92 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../utils/AuthContext.js';
+
+export default function LoginScreen() {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) { Alert.alert('Error', 'Please fill in all fields'); return; }
+    if (password.length < 6) { Alert.alert('Error', 'Password must be at least 6 characters'); return; }
+    setIsLoading(true);
+    try {
+      await login(email.trim(), password);
+      Alert.alert('Success', 'Login successful!');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Login failed. Please try again.');
+    } finally { setIsLoading(false); }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="dark" />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoidingView}>
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}><Text style={styles.backButtonText}>←</Text></TouchableOpacity>
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>Sign in to your account</Text>
+          </View>
+          <View style={styles.form}>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput style={styles.input} placeholder="Enter your email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput style={[styles.input, styles.passwordInput]} placeholder="Enter your password" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" />
+                <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={24} color="#7f8c8d" />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.forgotPassword}><Text style={styles.forgotPasswordText}>Forgot Password?</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.loginButton, isLoading && styles.loginButtonDisabled]} onPress={handleLogin} disabled={isLoading}>
+              <Text style={styles.loginButtonText}>{isLoading ? 'Signing In...' : 'Sign In'}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/auth/register')}><Text style={styles.footerLink}>Sign Up</Text></TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f8f9fa' },
+  keyboardAvoidingView: { flex: 1 },
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 24 },
+  header: { alignItems: 'center', marginTop: 40, marginBottom: 40 },
+  backButton: { position: 'absolute', left: 0, top: 0, padding: 8 },
+  backButtonText: { fontSize: 24, color: '#3498db' },
+  title: { fontSize: 28, fontWeight: 'bold', color: '#2c3e50', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#7f8c8d', textAlign: 'center' },
+  form: { flex: 1, justifyContent: 'center' },
+  inputContainer: { marginBottom: 20 },
+  label: { fontSize: 16, fontWeight: '600', color: '#2c3e50', marginBottom: 8 },
+  input: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e1e8ed', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 16, fontSize: 16, color: '#2c3e50' },
+  passwordContainer: { position: 'relative' },
+  passwordInput: { paddingRight: 50 },
+  eyeIcon: { position: 'absolute', right: 16, top: 16, padding: 4 },
+  forgotPassword: { alignSelf: 'flex-end', marginBottom: 24 },
+  forgotPasswordText: { color: '#3498db', fontSize: 14, fontWeight: '500' },
+  loginButton: { backgroundColor: '#3498db', paddingVertical: 16, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3.84, elevation: 5 },
+  loginButtonDisabled: { backgroundColor: '#bdc3c7' },
+  loginButtonText: { color: '#ffffff', fontSize: 18, fontWeight: '600', textAlign: 'center' },
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 20 },
+  footerText: { color: '#7f8c8d', fontSize: 16 },
+  footerLink: { color: '#3498db', fontSize: 16, fontWeight: '600' },
+});
