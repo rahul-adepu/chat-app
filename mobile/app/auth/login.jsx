@@ -20,7 +20,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await login(email.trim(), password);
-      Alert.alert('Success', 'Login successful!');
+      router.replace('/home');
     } catch (error) {
       Alert.alert('Error', error.message || 'Login failed. Please try again.');
     } finally { setIsLoading(false); }
