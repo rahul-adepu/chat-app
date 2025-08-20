@@ -8,7 +8,8 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
-  Platform
+  Platform,
+  AppState
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -20,7 +21,7 @@ export default function HomeScreen() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, logout, authState } = useAuth();
   const { socket, isConnected } = useSocket();
   const router = useRouter();
 
@@ -49,27 +50,89 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       // Refresh users when screen comes into focus (e.g., returning from chat)
-      fetchUsers();
-    }, [])
+      if (isConnected) {
+        fetchUsers();
+      }
+    }, [isConnected])
   );
 
+  // Refresh users when authentication state changes (login/logout)
   useEffect(() => {
-    if (socket) {
+    if (authState === 'authenticated' && isConnected) {
+      fetchUsers();
+    } else if (authState === 'unauthenticated') {
+      // Clear users when logging out
+      setUsers([]);
+      setLoading(false);
+    }
+  }, [authState, isConnected]);
+
+  // Handle socket connection changes
+  useEffect(() => {
+    console.log('Socket connection status changed:', { isConnected, hasSocket: !!socket });
+    if (isConnected && socket) {
+      console.log('Socket is connected, setting up listeners');
+      // The main socket effect will handle setting up listeners
+    }
+  }, [isConnected, socket]);
+
+  // Handle app state changes (background/foreground)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === 'active' && isConnected) {
+        // App came to foreground, refresh user status
+        fetchUsers();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (socket && isConnected) {
+      console.log('Setting up socket listeners in home screen');
       
+      // Set up event listeners
       socket.on('user:status', handleUserStatus);
       socket.on('conversation:unreadUpdate', handleUnreadUpdate);
+      
+      // Add a test listener to verify socket is working
+      socket.on('connect', () => {
+        console.log('Socket connected in home screen');
+      });
+
+      // Test response listener
+      socket.on('test:pong', (data) => {
+        console.log('Test pong received from server:', data);
+      });
+      
+      // Refresh users immediately when socket connects to get latest status
+      fetchUsers();
+      
+      console.log('Socket listeners set up successfully');
 
       return () => {
+        console.log('Cleaning up socket listeners in home screen');
         socket.off('user:status');
         socket.off('conversation:unreadUpdate');
+        socket.off('connect');
+        socket.off('test:pong');
       };
     }
-  }, [socket]);
+  }, [socket, isConnected]);
 
   const handleUserStatus = ({ userId, isOnline }) => {
-    setUsers(prev => prev.map(user => 
-      user._id === userId ? { ...user, isOnline } : user
-    ));
+    console.log('User status update received in home screen:', { userId, isOnline });
+    console.log('Current users before update:', users.map(u => ({ id: u._id, username: u.username, isOnline: u.isOnline })));
+    
+    setUsers(prev => {
+      const updated = prev.map(user => 
+        user._id === userId ? { ...user, isOnline } : user
+      );
+      console.log('Users after update:', updated.map(u => ({ id: u._id, username: u.username, isOnline: u.isOnline })));
+      return updated;
+    });
   };
 
   const handleMessageStatus = ({ messageId, status, readBy }) => {
@@ -104,6 +167,26 @@ export default function HomeScreen() {
       pathname: '/chat',
       params: { username, userId, isOnline: isOnline.toString() }
     });
+  };
+
+  // Force refresh users list to get latest online status
+  const forceRefreshUsers = () => {
+    console.log('Manual refresh triggered');
+    fetchUsers();
+  };
+
+  // Test socket connection and events
+  const testSocketConnection = () => {
+    if (socket && isConnected) {
+      console.log('Testing socket connection...');
+      console.log('Socket ID:', socket.id);
+      console.log('Is connected:', socket.connected);
+      
+      // Try to emit a test event
+      socket.emit('test:ping', { message: 'Hello from home screen' });
+    } else {
+      console.log('Socket not available or not connected');
+    }
   };
 
   const handleLogout = () => {
@@ -207,9 +290,17 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Chats</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={testSocketConnection} style={styles.testButton}>
+            <Ionicons name="bug" size={24} color="#FF9500" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={forceRefreshUsers} style={styles.refreshButton}>
+            <Ionicons name="refresh" size={24} color="#007AFF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+            <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -247,6 +338,17 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#000000'
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  testButton: {
+    padding: 8
+  },
+  refreshButton: {
+    padding: 8
   },
   logoutButton: {
     padding: 8

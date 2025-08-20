@@ -11,6 +11,7 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [authState, setAuthState] = useState('idle'); // 'idle', 'authenticating', 'authenticated', 'unauthenticated'
   const isAuthenticated = !!user;
 
   const getErrorMessage = (error) => {
@@ -25,10 +26,13 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
+      setAuthState('authenticating');
       const { token, user: userData } = await authAPI.login({ email, password });
       setAuthToken(token);
       setUser(userData);
+      setAuthState('authenticated');
     } catch (error) {
+      setAuthState('unauthenticated');
       throw new Error(getErrorMessage(error));
     }
   };
@@ -46,10 +50,11 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     clearAuthToken();
     setUser(null);
+    setAuthState('unauthenticated');
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, authState, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

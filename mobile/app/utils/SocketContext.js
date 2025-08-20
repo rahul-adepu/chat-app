@@ -55,8 +55,17 @@ export const SocketProvider = ({ children }) => {
       setSocket(newSocket);
 
       return () => {
-        newSocket.close();
+        if (newSocket) {
+          newSocket.close();
+        }
       };
+    } else {
+      // Clear socket when not authenticated
+      if (socket) {
+        socket.close();
+        setSocket(null);
+        setIsConnected(false);
+      }
     }
   }, [isAuthenticated, user]);
 

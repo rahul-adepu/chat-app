@@ -52,6 +52,7 @@ export const setupSocket = (server) => {
     });
 
     await User.findByIdAndUpdate(socket.userId, { isOnline: true });
+    console.log(`Emitting user:status online for user ${socket.userId}`);
     socket.broadcast.emit('user:status', { userId: socket.userId, isOnline: true });
 
     socket.on('join:conversation', (conversationId) => {
@@ -280,6 +281,12 @@ export const setupSocket = (server) => {
       socket.to(conversationId).emit('user:typing', { userId: socket.userId, username: socket.username, isTyping: false, conversationId });
     });
 
+    // Test event handler
+    socket.on('test:ping', (data) => {
+      console.log('Test ping received from client:', data);
+      socket.emit('test:pong', { message: 'Hello from server', timestamp: Date.now() });
+    });
+
     socket.on('disconnect', async () => {
       console.log(`User disconnected: ${socket.username} (${socket.userId})`);
       
@@ -304,6 +311,7 @@ export const setupSocket = (server) => {
       connectedUsers.delete(socket.userId);
       await User.findByIdAndUpdate(socket.userId, { isOnline: false });
       
+      console.log(`Emitting user:status offline for user ${socket.userId}`);
       socket.broadcast.emit('user:status', { userId: socket.userId, isOnline: false });
     });
   });
