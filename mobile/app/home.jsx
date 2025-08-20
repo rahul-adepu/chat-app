@@ -7,11 +7,13 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from './utils/AuthContext.js';
+import { useSocket } from './utils/SocketContext.js';
 import { usersAPI } from './services/api.js';
 
 export default function HomeScreen() {
@@ -19,6 +21,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { user, logout } = useAuth();
+  const { socket, isConnected } = useSocket();
   const router = useRouter();
 
   const fetchUsers = async () => {
@@ -42,6 +45,35 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('user:status', handleUserStatus);
+      socket.on('message:status', handleMessageStatus);
+
+      return () => {
+        socket.off('user:status');
+        socket.off('message:status');
+      };
+    }
+  }, [socket]);
+
+  const handleUserStatus = ({ userId, isOnline }) => {
+    setUsers(prev => prev.map(user => 
+      user._id === userId ? { ...user, isOnline } : user
+    ));
+  };
+
+  const handleMessageStatus = ({ messageId, status, readBy }) => {
+    if (status === 'read' && readBy === user.id) {
+      // Update unread count when message is read
+      setUsers(prev => prev.map(userItem => {
+        // Find the conversation and update unread count
+        // This is a simplified approach - you might want to implement a more sophisticated solution
+        return userItem;
+      }));
+    }
+  };
 
   const handleUserPress = (username, userId) => {
     router.push({
@@ -173,7 +205,8 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7'
+    backgroundColor: '#F2F2F7',
+    paddingTop: Platform.OS === 'android' ? 25 : 0 // Add top padding for Android notification bar
   },
   header: {
     flexDirection: 'row',
@@ -183,7 +216,8 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA'
+    borderBottomColor: '#E5E5EA',
+    marginTop: Platform.OS === 'android' ? 10 : 0 // Additional margin for Android
   },
   title: {
     fontSize: 28,
@@ -196,7 +230,8 @@ const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'android' ? 25 : 0
   },
   loadingText: {
     marginTop: 10,

@@ -33,6 +33,7 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState(null);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [otherUserTypingName, setOtherUserTypingName] = useState('');
+  const [otherUserOnline, setOtherUserOnline] = useState(false);
   
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -51,12 +52,14 @@ export default function ChatScreen() {
       socket.on('message:status', handleMessageStatus);
       socket.on('user:typing', handleUserTyping);
       socket.on('message:sent', handleMessageSent);
+      socket.on('user:status', handleUserStatus);
 
       return () => {
         socket.off('message:new');
         socket.off('message:status');
         socket.off('user:typing');
         socket.off('message:sent');
+        socket.off('user:status');
       };
     }
   }, [socket]);
@@ -81,7 +84,19 @@ export default function ChatScreen() {
         new Date(a.createdAt) - new Date(b.createdAt)
       );
       
-      setMessages(sortedMessages);
+      // Set isSenderOnline for existing messages based on current user's online status
+      const messagesWithOnlineStatus = sortedMessages.map(msg => ({
+        ...msg,
+        isSenderOnline: msg.sender._id === user.id ? true : false // Set based on current user's online status
+      }));
+      
+      setMessages(messagesWithOnlineStatus);
+      
+      console.log('Loaded messages with online status:', messagesWithOnlineStatus.map(m => ({
+        id: m._id,
+        status: m.status,
+        isSenderOnline: m.isSenderOnline
+      })));
       
       // Mark messages as read
       const unreadMessages = sortedMessages.filter(msg => 
@@ -100,7 +115,18 @@ export default function ChatScreen() {
     }
   };
 
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messages.length > 0 && flatListRef.current) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  }, [messages]);
+
   const handleNewMessage = (message) => {
+    console.log('Received new message:', message._id, 'from pending:', pendingMessages.current.has(message._id));
+    
     // Check if this message is already in our pending messages
     if (pendingMessages.current.has(message._id)) {
       // Update the pending message with the real message data
@@ -119,13 +145,9 @@ export default function ChatScreen() {
     }
   };
 
-  const handleMessageStatus = ({ messageId, status, isSenderOnline }) => {
-    setMessages(prev => prev.map(msg => 
-      msg._id === messageId ? { ...msg, status, isSenderOnline } : msg
-    ));
-  };
 
   const handleMessageSent = ({ messageId, status }) => {
+    console.log('Message sent update received:', { messageId, status });
     setMessages(prev => prev.map(msg => 
       msg._id === messageId ? { ...msg, status } : msg
     ));
@@ -135,6 +157,12 @@ export default function ChatScreen() {
     if (typingConversationId === conversationId && typingUserId !== user.id) {
       setOtherUserTyping(isTyping);
       setOtherUserTypingName(isTyping ? typingUsername : '');
+    }
+  };
+
+  const handleUserStatus = ({ userId: statusUserId, isOnline }) => {
+    if (statusUserId === userId) {
+      setOtherUserOnline(isOnline);
     }
   };
 
@@ -160,7 +188,7 @@ export default function ChatScreen() {
   const sendMessageHandler = () => {
     if (!newMessage.trim() || !conversationId || !isConnected) return;
     
-    const tempId = Date.now().toString();
+    const tempId = `temp_${Date.now()}`;
     const messageData = {
       _id: tempId,
       content: newMessage.trim(),
@@ -169,7 +197,7 @@ export default function ChatScreen() {
       status: 'sending'
     };
     
-    // Add to pending messages map
+    // Add to pending messages map with the temp ID
     pendingMessages.current.set(tempId, tempId);
     
     // Add message to UI immediately
@@ -185,17 +213,25 @@ export default function ChatScreen() {
 
   const getMessageStatusIcon = (status, isOwnMessage, isSenderOnline) => {
     if (!isOwnMessage) return null;
-    
+  
+    console.log('Getting status icon for message:', { status, isOwnMessage, isSenderOnline });
+  
     switch (status) {
       case 'sending':
         return <ActivityIndicator size={12} color="#8E8E93" />;
       case 'sent':
-        return <Ionicons name="checkmark" size={12} color="#8E8E93" />;
+        return (
+          <Ionicons name="checkmark" size={12} color="#8E8E93" />
+        );
       case 'delivered':
-        return <Ionicons name="checkmark" size={12} color="#8E8E93" />;
+        return (
+          <Ionicons name="checkmark" size={12} color="#8E8E93" />
+        );
       case 'read':
         // Show different read receipts based on sender's online status
+        console.log('Message is read, sender online status:', isSenderOnline);
         if (isSenderOnline) {
+          console.log('Showing double checkmarks (online user)');
           return (
             <View style={styles.doubleCheck}>
               <Ionicons name="checkmark" size={12} color="#007AFF" />
@@ -203,15 +239,39 @@ export default function ChatScreen() {
             </View>
           );
         } else {
+          console.log('Showing single checkmark (offline user)');
           return <Ionicons name="checkmark" size={12} color="#007AFF" />;
         }
       default:
         return null;
     }
   };
+  
+  // In the handleMessageStatus function, ensure that the status is updated correctly
+  const handleMessageStatus = ({ messageId, status, isSenderOnline }) => {
+    console.log('Message status update received:', { messageId, status, isSenderOnline });
+  
+    setMessages(prev => prev.map(msg => {
+      if (msg._id === messageId) {
+        const updatedMsg = { ...msg, status, isSenderOnline };
+        console.log('Updated message:', updatedMsg);
+        return updatedMsg;
+      }
+      return msg;
+    }));
+  };
+  
 
   const renderMessage = ({ item }) => {
     const isOwnMessage = item.sender._id === user.id;
+    
+    console.log('Rendering message:', {
+      messageId: item._id,
+      content: item.content,
+      status: item.status,
+      isSenderOnline: item.isSenderOnline,
+      isOwnMessage
+    });
     
     return (
       <View style={[
@@ -266,10 +326,10 @@ export default function ChatScreen() {
           <View style={styles.statusRow}>
             <View style={[
               styles.statusDot,
-              { backgroundColor: isConnected ? '#4CAF50' : '#9E9E9E' }
+              { backgroundColor: otherUserOnline ? '#4CAF50' : '#9E9E9E' }
             ]} />
             <Text style={styles.statusText}>
-              {isConnected ? 'Connected' : 'Disconnected'}
+              {otherUserOnline ? 'Online' : 'Offline'}
             </Text>
           </View>
         </View>
@@ -296,13 +356,18 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.messagesList}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        initialNumToRender={20}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        removeClippedSubviews={false}
       />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.inputContainer}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 120 : 0}
+        enabled={Platform.OS === 'ios'}
       >
         <View style={styles.inputRow}>
           <TextInput
@@ -313,6 +378,8 @@ export default function ChatScreen() {
             multiline
             maxLength={1000}
             textAlignVertical="top"
+            returnKeyType="default"
+            blurOnSubmit={false}
           />
           <TouchableOpacity
             style={[
@@ -337,7 +404,8 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7'
+    backgroundColor: '#F2F2F7',
+    paddingTop: Platform.OS === 'android' ? 25 : 0 // Add top padding for Android notification bar
   },
   header: {
     flexDirection: 'row',
@@ -346,7 +414,8 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA'
+    borderBottomColor: '#E5E5EA',
+    marginTop: Platform.OS === 'android' ? 10 : 0 // Additional margin for Android
   },
   backButton: {
     marginRight: 15,
@@ -414,7 +483,7 @@ const styles = StyleSheet.create({
     flexGrow: 1
   },
   messageContainer: {
-    marginVertical: 5,
+    marginVertical: 8,
     paddingHorizontal: 20
   },
   ownMessage: {
@@ -470,7 +539,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E5EA',
     paddingHorizontal: 20,
-    paddingVertical: 15
+    paddingVertical: 15,
+    paddingBottom: Platform.OS === 'ios' ? 15 : 20 // Extra padding for iOS
   },
   inputRow: {
     flexDirection: 'row',
@@ -482,17 +552,17 @@ const styles = StyleSheet.create({
     borderColor: '#E5E5EA',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     maxHeight: 100,
     marginRight: 10,
     fontSize: 16,
-    minHeight: 40
+    minHeight: 44
   },
   sendButton: {
     backgroundColor: '#007AFF',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -502,7 +572,8 @@ const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'android' ? 25 : 0
   },
   loadingText: {
     marginTop: 10,

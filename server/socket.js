@@ -135,6 +135,12 @@ export const setupSocket = (server) => {
 
         await message.save();
 
+        console.log('Message created with online status:', {
+          messageId: message._id,
+          senderId: socket.userId,
+          isSenderOnline: message.isSenderOnline
+        });
+
         const conversation = await Conversation.findById(conversationId);
         if (conversation) {
           conversation.lastMessage = message._id;
@@ -181,6 +187,12 @@ export const setupSocket = (server) => {
               status: 'delivered',
               isSenderOnline
             });
+
+            console.log('Emitted delivered status:', {
+              messageId: message._id,
+              status: 'delivered',
+              isSenderOnline
+            });
           } catch (error) {
             console.error('Error updating message status to delivered:', error);
           }
@@ -212,12 +224,29 @@ export const setupSocket = (server) => {
           const senderSocketId = connectedUsers.get(message.sender.toString())?.socketId;
           const isSenderOnline = !!senderSocketId;
 
+          console.log('Message read - Sender online status:', {
+            messageId,
+            senderId: message.sender.toString(),
+            senderSocketId,
+            isSenderOnline
+          });
+
+          // Update the message in database with online status
+          await Message.findByIdAndUpdate(messageId, { isSenderOnline });
+
           // Emit read status to all users in conversation
           io.to(conversationId).emit('message:status', {
             messageId,
             status: 'read',
             readBy: socket.userId,
             readAt: message.readAt,
+            isSenderOnline
+          });
+
+          console.log('Emitted read status:', {
+            messageId,
+            status: 'read',
+            readBy: socket.userId,
             isSenderOnline
           });
 
@@ -229,6 +258,17 @@ export const setupSocket = (server) => {
             if (currentUnreadCount > 0) {
               conversation.unreadCount.set(socket.userId, currentUnreadCount - 1);
               await conversation.save();
+              
+              // Emit updated unread count to all participants
+              conversation.participants.forEach(participantId => {
+                const participantSocketId = connectedUsers.get(participantId.toString())?.socketId;
+                if (participantSocketId) {
+                  io.to(participantSocketId).emit('conversation:unreadUpdate', {
+                    conversationId,
+                    unreadCount: conversation.unreadCount.get(participantId.toString()) || 0
+                  });
+                }
+              });
             }
           }
         }
