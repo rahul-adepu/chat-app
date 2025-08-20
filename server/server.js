@@ -2,14 +2,17 @@ import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import cors from "cors";
+import { createServer } from "http";
 
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
 import conversationsRoutes from "./routes/conversations.js";
+import { setupSocket } from "./socket.js";
 
 dotenv.config({ quiet: true });
 
 const app = express();
+const server = createServer(app);
 
 app.use(cors());
 app.use(express.json());
@@ -23,5 +26,7 @@ mongoose
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error(err));
 
+const io = setupSocket(server);
+
 const PORT = process.env.PORT || 5060;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
