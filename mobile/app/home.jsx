@@ -55,13 +55,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (socket) {
-      console.log('Setting up socket listeners in home screen');
       
       socket.on('user:status', handleUserStatus);
       socket.on('conversation:unreadUpdate', handleUnreadUpdate);
 
       return () => {
-        console.log('Cleaning up socket listeners in home screen');
         socket.off('user:status');
         socket.off('conversation:unreadUpdate');
       };
@@ -86,19 +84,17 @@ export default function HomeScreen() {
   };
 
   const handleUnreadUpdate = ({ conversationId, unreadCount }) => {
-    console.log('Unread update received:', { conversationId, unreadCount });
     
     setUsers(prev => prev.map(u => {
       // If this user has this conversationId, update their unread count
       if (u.conversationId === conversationId) {
-        console.log(`Updating unread count for user ${u.username}: ${unreadCount}`);
         return { ...u, unreadCount };
       }
       return u;
     }));
   };
 
-  const handleUserPress = (username, userId) => {
+  const handleUserPress = (username, userId, isOnline) => {
     // Optimistically clear unread for the tapped user
     setUsers(prev => prev.map(u =>
       u._id === userId ? { ...u, unreadCount: 0 } : u
@@ -106,7 +102,7 @@ export default function HomeScreen() {
 
     router.push({
       pathname: '/chat',
-      params: { username, userId }
+      params: { username, userId, isOnline: isOnline.toString() }
     });
   };
 
@@ -148,7 +144,7 @@ export default function HomeScreen() {
   const renderUserItem = ({ item }) => (
     <TouchableOpacity
       style={styles.userItem}
-      onPress={() => handleUserPress(item.username, item._id)}
+      onPress={() => handleUserPress(item.username, item._id, item.isOnline)}
     >
       <View style={styles.userInfo}>
         <View style={styles.avatarContainer}>

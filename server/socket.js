@@ -56,8 +56,7 @@ export const setupSocket = (server) => {
 
     socket.on('join:conversation', (conversationId) => {
       socket.join(conversationId);
-      console.log(`User ${socket.username} (${socket.userId}) joined conversation: ${conversationId}`);
-      console.log(`Socket ${socket.id} is now in rooms:`, Array.from(socket.rooms));
+      console.log(`User ${socket.username} joined conversation: ${conversationId}`);
     });
 
     socket.on('leave:conversation', (conversationId) => {
@@ -119,7 +118,6 @@ export const setupSocket = (server) => {
 
     socket.on('message:send', async (data) => {
       const { conversationId, content, messageType = 'text', clientTempId } = data;
-      console.log(`Message send request from ${socket.username}:`, { conversationId, content, clientTempId });
       
       try {
         const Message = (await import('./models/Message.js')).default;
@@ -136,7 +134,6 @@ export const setupSocket = (server) => {
         });
 
         await message.save();
-        console.log(`Message saved with ID: ${message._id}`);
 
         const conversation = await Conversation.findById(conversationId);
         if (conversation) {
@@ -150,18 +147,14 @@ export const setupSocket = (server) => {
           conversation.unreadCount.set(otherKey, currentUnreadCount + 1);
           
           await conversation.save();
-          console.log(`Updated conversation ${conversationId}, unread count for ${otherKey}: ${conversation.unreadCount.get(otherKey)}`);
 
           // Emit unread badge update to receiver
           const receiverSocketId = connectedUsers.get(otherKey)?.socketId;
           if (receiverSocketId) {
-            console.log(`Emitting unread update to ${otherKey} (socket: ${receiverSocketId})`);
             io.to(receiverSocketId).emit('conversation:unreadUpdate', {
               conversationId,
               unreadCount: conversation.unreadCount.get(otherKey) || 0
             });
-          } else {
-            console.log(`Receiver ${otherKey} not connected, cannot emit unread update`);
           }
         }
 
@@ -170,9 +163,6 @@ export const setupSocket = (server) => {
           .lean();
         populatedMessage.clientTempId = clientTempId || null;
 
-        console.log(`Broadcasting message:new to conversation ${conversationId}`);
-        console.log(`Socket ${socket.id} is in rooms:`, Array.from(socket.rooms));
-        console.log(`Broadcasting to room ${conversationId}, connected users:`, Array.from(connectedUsers.keys()));
         io.to(conversationId).emit('message:new', populatedMessage);
         socket.emit('message:sent', { messageId: message._id, status: 'sent', conversationId, clientTempId });
         

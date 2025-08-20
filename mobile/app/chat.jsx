@@ -22,7 +22,7 @@ import { conversationsAPI } from './services/api.js';
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function ChatScreen() {
-  const { username, userId } = useLocalSearchParams();
+  const { username, userId, isOnline } = useLocalSearchParams();
   const { user } = useAuth();
   const { socket, isConnected, joinConversation, leaveConversation, sendMessage, sendTypingIndicator, markMessageAsRead } = useSocket();
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState(null);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [otherUserTypingName, setOtherUserTypingName] = useState('');
-  const [otherUserOnline, setOtherUserOnline] = useState(false);
+  const [otherUserOnline, setOtherUserOnline] = useState(isOnline === 'true');
   
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -92,11 +92,6 @@ export default function ChatScreen() {
       
       setMessages(messagesWithOnlineStatus);
       
-      console.log('Loaded messages with online status:', messagesWithOnlineStatus.map(m => ({
-        id: m._id,
-        status: m.status,
-        isSenderOnline: m.isSenderOnline
-      })));
       
       // Mark messages as read
       const unreadMessages = sortedMessages.filter(msg => 
@@ -126,7 +121,6 @@ export default function ChatScreen() {
 
   const handleNewMessage = (message) => {
     const { _id, clientTempId } = message;
-    console.log('Received new message:', _id, 'clientTempId:', clientTempId, 'pendingHasTemp:', clientTempId ? pendingMessages.current.has(clientTempId) : false);
     
     if (clientTempId && pendingMessages.current.has(clientTempId)) {
       // Replace temp message with real message
@@ -151,7 +145,6 @@ export default function ChatScreen() {
 
 
   const handleMessageSent = ({ messageId, status, conversationId: sentConvId }) => {
-    console.log('Message sent update received:', { messageId, status, sentConvId });
     setMessages(prev => prev.map(msg => 
       msg._id === messageId ? { ...msg, status } : msg
     ));
@@ -216,55 +209,42 @@ export default function ChatScreen() {
     sendMessage(conversationId, newMessage.trim(), 'text', clientTempId);
   };
 
-  const getMessageStatusIcon = (status, isOwnMessage, isSenderOnline) => {
+  const getMessageStatusIcon = (status, isOwnMessage) => {
     if (!isOwnMessage) return null;
-  
-    console.log('Getting status icon for message:', { status, isOwnMessage, isSenderOnline });
   
     switch (status) {
       case 'sending':
         return <ActivityIndicator size={12} color="#8E8E93" />;
       case 'sent':
-        return (
-          <Ionicons name="checkmark" size={12} color="#8E8E93" />
-        );
+        return <Ionicons name="checkmark" size={14} color="#8E8E93" />;
       case 'delivered':
         return (
-          <Ionicons name="checkmark" size={12} color="#8E8E93" />
+          <View style={styles.doubleCheck}>
+            <Ionicons name="checkmark" size={14} color="#8E8E93" />
+            <Ionicons name="checkmark" size={14} color="#8E8E93" style={styles.secondCheck} />
+          </View>
         );
       case 'read':
-        // Show different read receipts based on sender's online status
-        console.log('Message is read, sender online status:', isSenderOnline);
-        if (isSenderOnline) {
-          console.log('Showing double checkmarks (online user)');
-          return (
-            <View style={styles.doubleCheck}>
-              <Ionicons name="checkmark" size={12} color="#007AFF" />
-              <Ionicons name="checkmark" size={12} color="#007AFF" style={styles.secondCheck} />
-            </View>
-          );
-        } else {
-          console.log('Showing single checkmark (offline user)');
-          return <Ionicons name="checkmark" size={12} color="#007AFF" />;
-        }
+        return (
+          <View style={styles.doubleCheck}>
+            <Ionicons name="checkmark" size={14} color="#007AFF" />
+            <Ionicons name="checkmark" size={14} color="#007AFF" style={styles.secondCheck} />
+          </View>
+        );
       default:
         return null;
     }
   };
   
-  // In the handleMessageStatus function, ensure that the status is updated correctly
-  const handleMessageStatus = ({ messageId, status, isSenderOnline, conversationId: statusConvId }) => {
-    console.log('Message status update received:', { messageId, status, isSenderOnline, statusConvId });
-    
-    setMessages(prev => prev.map(msg => {
-      if (msg._id === messageId) {
-        const updatedMsg = { ...msg, status, isSenderOnline };
-        console.log('Updated message:', updatedMsg);
-        return updatedMsg;
-      }
-      return msg;
-    }));
+  
+  const handleMessageStatus = ({ messageId, status, conversationId: statusConvId }) => {
+    setMessages(prev =>
+      prev.map(msg =>
+        msg._id === messageId ? { ...msg, status } : msg
+      )
+    );
   };
+  
 
   useEffect(() => {
     if (socket) {
@@ -280,14 +260,6 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }) => {
     const isOwnMessage = item.sender._id === user.id;
-    
-    console.log('Rendering message:', {
-      messageId: item._id,
-      content: item.content,
-      status: item.status,
-      isSenderOnline: item.isSenderOnline,
-      isOwnMessage
-    });
     
     return (
       <View style={[
@@ -515,7 +487,7 @@ const styles = StyleSheet.create({
     borderRadius: 20
   },
   ownBubble: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#34C759',
     borderBottomRightRadius: 5
   },
   otherBubble: {
