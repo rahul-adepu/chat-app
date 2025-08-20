@@ -105,6 +105,12 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const markConversationAsRead = (conversationId) => {
+    if (socket && isConnected) {
+      socket.emit('conversation:markAllRead', { conversationId });
+    }
+  };
+
   const value = {
     socket,
     isConnected,
@@ -112,7 +118,8 @@ export const SocketProvider = ({ children }) => {
     leaveConversation,
     sendMessage,
     sendTypingIndicator,
-    markMessageAsRead
+    markMessageAsRead,
+    markConversationAsRead
   };
 
   return (

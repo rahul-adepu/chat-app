@@ -13,6 +13,53 @@ export const setupSocket = (server) => {
   const connectedUsers = new Map();
   const typingUsers = new Map(); // Track typing status per conversation
 
+  // Function to mark pending messages as delivered when user comes online
+  const markPendingMessagesAsDelivered = async (userId) => {
+    try {
+      const Message = (await import('./models/Message.js')).default;
+      const Conversation = (await import('./models/Conversation.js')).default;
+      
+      // Find all conversations where this user is a participant
+      const conversations = await Conversation.find({ participants: userId });
+      
+      for (const conversation of conversations) {
+        // Find all sent messages that haven't been delivered to this user
+        const pendingMessages = await Message.find({
+          conversationId: conversation._id,
+          sender: { $ne: userId },
+          status: 'sent'
+        });
+        
+        if (pendingMessages.length > 0) {
+          // Mark all pending messages as delivered
+          await Message.updateMany(
+            { _id: { $in: pendingMessages.map(m => m._id) } },
+            { 
+              status: 'delivered',
+              deliveredAt: new Date()
+            }
+          );
+          
+          // Emit delivered status for each message
+          pendingMessages.forEach(message => {
+            const senderSocketId = connectedUsers.get(message.sender.toString())?.socketId;
+            if (senderSocketId) {
+              io.to(senderSocketId).emit('message:status', {
+                messageId: message._id,
+                status: 'delivered',
+                conversationId: conversation._id
+              });
+            }
+          });
+          
+          console.log(`Marked ${pendingMessages.length} messages as delivered for user ${userId}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error marking pending messages as delivered:', error);
+    }
+  };
+
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -54,6 +101,9 @@ export const setupSocket = (server) => {
     await User.findByIdAndUpdate(socket.userId, { isOnline: true });
     console.log(`Emitting user:status online for user ${socket.userId}`);
     socket.broadcast.emit('user:status', { userId: socket.userId, isOnline: true });
+
+    // Mark pending messages as delivered when user comes online
+    markPendingMessagesAsDelivered(socket.userId);
 
     socket.on('join:conversation', (conversationId) => {
       socket.join(conversationId);
@@ -154,7 +204,9 @@ export const setupSocket = (server) => {
           if (receiverSocketId) {
             io.to(receiverSocketId).emit('conversation:unreadUpdate', {
               conversationId,
-              unreadCount: conversation.unreadCount.get(otherKey) || 0
+              unreadCount: conversation.unreadCount.get(otherKey) || 0,
+              senderId: socket.userId,
+              senderUsername: socket.username
             });
           }
         }
@@ -167,42 +219,45 @@ export const setupSocket = (server) => {
         io.to(conversationId).emit('message:new', populatedMessage);
         socket.emit('message:sent', { messageId: message._id, status: 'sent', conversationId, clientTempId });
         
-        setTimeout(async () => {
-          try {
-            await Message.findByIdAndUpdate(message._id, { 
-              status: 'delivered',
-              deliveredAt: new Date()
-            });
-            
-            const senderSocketId = connectedUsers.get(socket.userId)?.socketId;
-            const isSenderOnline = !!senderSocketId;
-            
-            socket.emit('message:status', { 
-              messageId: message._id, 
-              status: 'delivered',
-              isSenderOnline,
-              conversationId,
-              clientTempId
-            });
-            
-            io.to(conversationId).emit('message:status', { 
-              messageId: message._id, 
-              status: 'delivered',
-              isSenderOnline,
-              conversationId,
-              clientTempId
-            });
-
-            console.log('Emitted delivered status:', {
-              messageId: message._id,
-              status: 'delivered',
-              isSenderOnline,
-              conversationId
-            });
-          } catch (error) {
-            console.error('Error updating message status to delivered:', error);
-          }
-        }, 300);
+        // Check if recipient is online to determine delivery status
+        const otherParticipant = conversation.participants.find(p => p.toString() !== socket.userId);
+        const recipientSocketId = connectedUsers.get(otherParticipant.toString())?.socketId;
+        const isRecipientOnline = !!recipientSocketId;
+        
+        if (isRecipientOnline) {
+          // Recipient is online, mark as delivered immediately
+          setTimeout(async () => {
+            try {
+              await Message.findByIdAndUpdate(message._id, { 
+                status: 'delivered',
+                deliveredAt: new Date()
+              });
+              
+              // Emit delivered status to sender
+              socket.emit('message:status', { 
+                messageId: message._id, 
+                status: 'delivered',
+                conversationId,
+                clientTempId
+              });
+              
+              console.log('Message delivered to online recipient:', {
+                messageId: message._id,
+                status: 'delivered',
+                conversationId
+              });
+            } catch (error) {
+              console.error('Error updating message status to delivered:', error);
+            }
+          }, 100);
+        } else {
+          // Recipient is offline, keep status as 'sent'
+          console.log('Message sent but recipient is offline:', {
+            messageId: message._id,
+            status: 'sent',
+            conversationId
+          });
+        }
 
       } catch (error) {
         console.error('Error sending message:', error);
@@ -226,25 +281,19 @@ export const setupSocket = (server) => {
           }
           await message.save();
 
-          const senderSocketId = connectedUsers.get(message.sender.toString())?.socketId;
-          const isSenderOnline = !!senderSocketId;
+          console.log('Message marked as read:', {
+            messageId,
+            status: 'read',
+            readBy: socket.userId,
+            conversationId
+          });
 
-          await Message.findByIdAndUpdate(messageId, { isSenderOnline });
-
+          // Emit read status to all participants in the conversation
           io.to(conversationId).emit('message:status', {
             messageId,
             status: 'read',
             readBy: socket.userId,
             readAt: message.readAt,
-            isSenderOnline,
-            conversationId
-          });
-
-          console.log('Emitted read status:', {
-            messageId,
-            status: 'read',
-            readBy: socket.userId,
-            isSenderOnline,
             conversationId
           });
 
@@ -256,12 +305,14 @@ export const setupSocket = (server) => {
               conversation.unreadCount.set(socket.userId, currentUnreadCount - 1);
               await conversation.save();
               
+              // Emit unread count updates to all participants
               conversation.participants.forEach(participantId => {
                 const participantSocketId = connectedUsers.get(participantId.toString())?.socketId;
                 if (participantSocketId) {
                   io.to(participantSocketId).emit('conversation:unreadUpdate', {
                     conversationId,
-                    unreadCount: conversation.unreadCount.get(participantId.toString()) || 0
+                    unreadCount: conversation.unreadCount.get(participantId.toString()) || 0,
+                    updatedBy: socket.userId
                   });
                 }
               });
@@ -285,6 +336,60 @@ export const setupSocket = (server) => {
     socket.on('test:ping', (data) => {
       console.log('Test ping received from client:', data);
       socket.emit('test:pong', { message: 'Hello from server', timestamp: Date.now() });
+    });
+
+    // Handle bulk message read (when opening chat)
+    socket.on('conversation:markAllRead', async (data) => {
+      const { conversationId } = data;
+      
+      try {
+        const Message = (await import('./models/Message.js')).default;
+        const Conversation = (await import('./models/Conversation.js')).default;
+        
+        // Mark all unread messages in this conversation as read for the current user
+        const result = await Message.updateMany(
+          { 
+            conversationId, 
+            sender: { $ne: socket.userId },
+            isRead: false 
+          },
+          { 
+            $set: { 
+              isRead: true, 
+              readAt: new Date() 
+            },
+            $addToSet: { readBy: socket.userId }
+          }
+        );
+
+        console.log(`Marking all messages as read for conversation ${conversationId}, user ${socket.userId}, modified: ${result.modifiedCount}`);
+        
+        // Always update conversation unread count and emit update, regardless of whether messages were modified
+        const conversation = await Conversation.findById(conversationId);
+        if (conversation) {
+          conversation.unreadCount.set(socket.userId, 0);
+          await conversation.save();
+          
+          console.log(`Updated unread count for user ${socket.userId} to 0 in conversation ${conversationId}`);
+          
+          // Emit unread count update to all participants
+          conversation.participants.forEach(participantId => {
+            const participantSocketId = connectedUsers.get(participantId.toString())?.socketId;
+            if (participantSocketId) {
+              const unreadCount = conversation.unreadCount.get(participantId.toString()) || 0;
+              console.log(`Emitting unread update to participant ${participantId}: ${unreadCount}`);
+              io.to(participantSocketId).emit('conversation:unreadUpdate', {
+                conversationId,
+                unreadCount,
+                updatedBy: socket.userId,
+                action: 'markAllRead'
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error marking all messages as read:', error);
+      }
     });
 
     socket.on('disconnect', async () => {

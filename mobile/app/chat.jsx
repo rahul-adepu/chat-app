@@ -14,7 +14,7 @@ import {
   Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth } from './utils/AuthContext.js';
 import { useSocket } from './utils/SocketContext.js';
 import { conversationsAPI } from './services/api.js';
@@ -24,7 +24,7 @@ const { width: screenWidth } = Dimensions.get('window');
 export default function ChatScreen() {
   const { username, userId, isOnline } = useLocalSearchParams();
   const { user } = useAuth();
-  const { socket, isConnected, joinConversation, leaveConversation, sendMessage, sendTypingIndicator, markMessageAsRead } = useSocket();
+  const { socket, isConnected, joinConversation, leaveConversation, sendMessage, sendTypingIndicator, markMessageAsRead, markConversationAsRead } = useSocket();
   const router = useRouter();
   
   const [messages, setMessages] = useState([]);
@@ -63,6 +63,48 @@ export default function ChatScreen() {
       };
     }
   }, [socket]);
+
+  // Mark all messages as read when socket is connected and conversation is ready
+  useEffect(() => {
+    if (socket && isConnected && conversationId) {
+      console.log('Marking conversation as read:', conversationId);
+      markConversationAsRead(conversationId);
+      
+      // Also mark individual messages as read through API as backup
+      markAllMessagesAsReadAPI(conversationId);
+    }
+  }, [socket, isConnected, conversationId]);
+
+  // Also mark as read when the screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (conversationId && socket && isConnected) {
+        console.log('Chat screen focused, marking conversation as read:', conversationId);
+        // Add a small delay to ensure the socket is ready
+        setTimeout(() => {
+          markConversationAsRead(conversationId);
+        }, 100);
+      }
+    }, [conversationId, socket, isConnected])
+  );
+
+  // Mark as read immediately when component mounts
+  useEffect(() => {
+    if (conversationId && socket && isConnected) {
+      console.log('Chat component mounted, marking conversation as read:', conversationId);
+      markConversationAsRead(conversationId);
+    }
+  }, [conversationId, socket, isConnected]);
+
+  // Mark as read when component unmounts (user navigates back)
+  useEffect(() => {
+    return () => {
+      if (conversationId && socket && isConnected) {
+        console.log('Chat component unmounting, marking conversation as read:', conversationId);
+        markConversationAsRead(conversationId);
+      }
+    };
+  }, [conversationId, socket, isConnected]);
 
   useEffect(() => {
     initializeChat();
@@ -237,10 +279,17 @@ export default function ChatScreen() {
   };
   
   
-  const handleMessageStatus = ({ messageId, status, conversationId: statusConvId }) => {
+  const handleMessageStatus = ({ messageId, status, conversationId: statusConvId, readBy, readAt }) => {
+    console.log('Message status update received:', { messageId, status, conversationId: statusConvId, readBy, readAt });
+    
     setMessages(prev =>
       prev.map(msg =>
-        msg._id === messageId ? { ...msg, status } : msg
+        msg._id === messageId ? { 
+          ...msg, 
+          status,
+          readBy: readBy ? [...(msg.readBy || []), readBy] : msg.readBy,
+          readAt: readAt || msg.readAt
+        } : msg
       )
     );
   };
@@ -248,9 +297,9 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (socket) {
-      const onUnreadUpdate = ({ conversationId: convId, unreadCount }) => {
-        // Bubble up to home via event (optional) or keep local state; here we do nothing in chat
-        console.log('Unread update for conversation', convId, unreadCount);
+      const onUnreadUpdate = ({ conversationId: convId, unreadCount, action }) => {
+        console.log('Unread update for conversation', convId, unreadCount, action);
+        // This will be handled by the home screen when we return to it
       };
       socket.on('conversation:unreadUpdate', onUnreadUpdate);
       return () => socket.off('conversation:unreadUpdate', onUnreadUpdate);
@@ -285,11 +334,28 @@ export default function ChatScreen() {
                 hour12: true
               })}
             </Text>
-            {getMessageStatusIcon(item.status, isOwnMessage, item.isSenderOnline)}
+            {getMessageStatusIcon(item.status, isOwnMessage)}
           </View>
         </View>
       </View>
     );
+  };
+
+  const markAllMessagesAsReadAPI = async (conversationId) => {
+    try {
+      // Get all unread messages and mark them as read
+      const unreadMessages = messages.filter(msg => 
+        !msg.isRead && msg.sender._id !== user.id
+      );
+      
+      for (const message of unreadMessages) {
+        await conversationsAPI.markMessageAsRead(conversationId, message._id);
+      }
+      
+      console.log(`Marked ${unreadMessages.length} messages as read via API`);
+    } catch (error) {
+      console.error('Error marking all messages as read via API:', error);
+    }
   };
 
   if (loading) {
@@ -297,7 +363,6 @@ export default function ChatScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Loading chat...</Text>
         </View>
       </SafeAreaView>
     );

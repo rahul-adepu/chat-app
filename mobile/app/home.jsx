@@ -51,9 +51,18 @@ export default function HomeScreen() {
     React.useCallback(() => {
       // Refresh users when screen comes into focus (e.g., returning from chat)
       if (isConnected) {
+        console.log('Home screen focused, refreshing users to get latest unread counts');
         fetchUsers();
       }
     }, [isConnected])
+  );
+
+  // Also clear unread counts when returning from chat (additional safety)
+  useFocusEffect(
+    React.useCallback(() => {
+      // This will run every time the screen comes into focus
+      console.log('Home screen focused, ensuring unread counts are cleared');
+    }, [])
   );
 
   // Refresh users when authentication state changes (login/logout)
@@ -89,6 +98,14 @@ export default function HomeScreen() {
     return () => subscription?.remove();
   }, [isConnected]);
 
+  // Force clear unread count for a specific user (called when returning from chat)
+  const clearUnreadCount = (userId) => {
+    console.log('Clearing unread count for user:', userId);
+    setUsers(prev => prev.map(u =>
+      u._id === userId ? { ...u, unreadCount: 0 } : u
+    ));
+  };
+
   useEffect(() => {
     if (socket && isConnected) {
       console.log('Setting up socket listeners in home screen');
@@ -106,6 +123,12 @@ export default function HomeScreen() {
       socket.on('test:pong', (data) => {
         console.log('Test pong received from server:', data);
       });
+
+      // Listen for new messages to update unread counts
+      socket.on('message:new', handleNewMessage);
+      
+      // Listen for message status updates
+      socket.on('message:status', handleMessageStatusUpdate);
       
       // Refresh users immediately when socket connects to get latest status
       fetchUsers();
@@ -118,6 +141,8 @@ export default function HomeScreen() {
         socket.off('conversation:unreadUpdate');
         socket.off('connect');
         socket.off('test:pong');
+        socket.off('message:new');
+        socket.off('message:status');
       };
     }
   }, [socket, isConnected]);
@@ -135,6 +160,34 @@ export default function HomeScreen() {
     });
   };
 
+  const handleNewMessage = (message) => {
+    console.log('New message received in home screen:', message);
+    
+    // Update the user's last message and unread count
+    setUsers(prev => prev.map(user => {
+      if (user.conversationId === message.conversationId && user._id !== message.sender._id) {
+        return {
+          ...user,
+          lastMessage: { content: message.content, createdAt: message.createdAt },
+          lastMessageTime: message.createdAt,
+          unreadCount: (user.unreadCount || 0) + 1
+        };
+      }
+      return user;
+    }));
+  };
+
+  // Handle message status updates (delivered, read)
+  const handleMessageStatusUpdate = ({ messageId, status, conversationId, readBy }) => {
+    console.log('Message status update in home screen:', { messageId, status, conversationId, readBy });
+    
+    if (status === 'read') {
+      // When a message is read, we don't need to update unread count here
+      // The unread count will be updated by the conversation:unreadUpdate event
+      console.log('Message read, waiting for unread count update');
+    }
+  };
+
   const handleMessageStatus = ({ messageId, status, readBy }) => {
     if (status === 'read' && readBy === user.id) {
       // Update unread count when message is read
@@ -146,22 +199,57 @@ export default function HomeScreen() {
     }
   };
 
-  const handleUnreadUpdate = ({ conversationId, unreadCount }) => {
+  const handleUnreadUpdate = ({ conversationId, unreadCount, senderId, senderUsername, updatedBy, action }) => {
+    console.log('Unread update received:', { conversationId, unreadCount, senderId, senderUsername, updatedBy, action });
     
     setUsers(prev => prev.map(u => {
       // If this user has this conversationId, update their unread count
       if (u.conversationId === conversationId) {
-        return { ...u, unreadCount };
+        const updatedUser = { ...u, unreadCount };
+        
+        // If this is a new message, also update the last message preview
+        if (senderId && senderUsername && action !== 'markAllRead') {
+          updatedUser.lastMessage = {
+            content: `New message from ${senderUsername}`,
+            createdAt: new Date()
+          };
+          updatedUser.lastMessageTime = new Date();
+        }
+        
+        console.log(`Updated unread count for user ${u.username}: ${unreadCount}`);
+        return updatedUser;
+      }
+      return u;
+    }));
+  };
+
+  // Force clear unread count for a specific conversation
+  const forceClearUnreadCount = (conversationId) => {
+    console.log('Force clearing unread count for conversation:', conversationId);
+    setUsers(prev => prev.map(u => {
+      if (u.conversationId === conversationId) {
+        return { ...u, unreadCount: 0 };
       }
       return u;
     }));
   };
 
   const handleUserPress = (username, userId, isOnline) => {
-    // Optimistically clear unread for the tapped user
-    setUsers(prev => prev.map(u =>
-      u._id === userId ? { ...u, unreadCount: 0 } : u
-    ));
+    // Find the user and conversation
+    const selectedUser = users.find(u => u._id === userId);
+    
+    if (selectedUser && selectedUser.conversationId) {
+      console.log('Opening chat with user:', username, 'conversation:', selectedUser.conversationId);
+      
+      // Force clear unread count immediately
+      forceClearUnreadCount(selectedUser.conversationId);
+      
+      // Also emit the socket event immediately to ensure it's processed
+      if (socket && isConnected) {
+        console.log('Emitting markAllRead immediately for conversation:', selectedUser.conversationId);
+        socket.emit('conversation:markAllRead', { conversationId: selectedUser.conversationId });
+      }
+    }
 
     router.push({
       pathname: '/chat',
@@ -187,6 +275,16 @@ export default function HomeScreen() {
     } else {
       console.log('Socket not available or not connected');
     }
+  };
+
+  // Test function to see current unread counts
+  const testUnreadCounts = () => {
+    console.log('Current users with unread counts:');
+    users.forEach(user => {
+      if (user.unreadCount > 0) {
+        console.log(`${user.username}: ${user.unreadCount} unread`);
+      }
+    });
   };
 
   const handleLogout = () => {
@@ -294,6 +392,9 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={testSocketConnection} style={styles.testButton}>
             <Ionicons name="bug" size={24} color="#FF9500" />
           </TouchableOpacity>
+          <TouchableOpacity onPress={testUnreadCounts} style={styles.testUnreadButton}>
+            <Ionicons name="chatbubble" size={24} color="#FF6B6B" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={forceRefreshUsers} style={styles.refreshButton}>
             <Ionicons name="refresh" size={24} color="#007AFF" />
           </TouchableOpacity>
@@ -345,6 +446,9 @@ const styles = StyleSheet.create({
     gap: 10
   },
   testButton: {
+    padding: 8
+  },
+  testUnreadButton: {
     padding: 8
   },
   refreshButton: {
