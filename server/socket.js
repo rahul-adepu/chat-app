@@ -63,25 +63,20 @@ export const setupSocket = (server) => {
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
-      console.log('Socket auth attempt - Token:', token ? 'Present' : 'Missing');
       
       if (!token) {
-        console.log('Socket auth failed: No token provided');
         return next(new Error('Authentication error: No token provided'));
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('Socket auth - Decoded token:', { id: decoded.id });
       
       const user = await User.findById(decoded.id);
       if (!user) {
-        console.log('Socket auth failed: User not found');
         return next(new Error('Authentication error: User not found'));
       }
 
       socket.userId = user._id.toString();
       socket.username = user.username;
-      console.log('Socket auth successful for user:', user.username);
       next();
     } catch (error) {
       console.error('Socket auth error:', error.message);
@@ -90,8 +85,6 @@ export const setupSocket = (server) => {
   });
 
   io.on('connection', async (socket) => {
-    console.log(`User connected: ${socket.username} (${socket.userId})`);
-    
     connectedUsers.set(socket.userId, {
       socketId: socket.id,
       username: socket.username,
@@ -99,7 +92,6 @@ export const setupSocket = (server) => {
     });
 
     await User.findByIdAndUpdate(socket.userId, { isOnline: true });
-    console.log(`Emitting user:status online for user ${socket.userId}`);
     socket.broadcast.emit('user:status', { userId: socket.userId, isOnline: true });
 
     // Mark pending messages as delivered when user comes online
@@ -107,7 +99,6 @@ export const setupSocket = (server) => {
 
     socket.on('join:conversation', (conversationId) => {
       socket.join(conversationId);
-      console.log(`User ${socket.username} joined conversation: ${conversationId}`);
     });
 
     socket.on('leave:conversation', (conversationId) => {
@@ -119,7 +110,6 @@ export const setupSocket = (server) => {
           typingUsers.delete(conversationId);
         }
       }
-      console.log(`User ${socket.username} left conversation: ${conversationId}`);
     });
 
     socket.on('message:typing', ({ conversationId, isTyping }) => {
@@ -393,8 +383,6 @@ export const setupSocket = (server) => {
     });
 
     socket.on('disconnect', async () => {
-      console.log(`User disconnected: ${socket.username} (${socket.userId})`);
-      
       // Clear typing status for disconnected user
       for (const [conversationId, users] of typingUsers.entries()) {
         if (users.has(socket.userId)) {
@@ -416,7 +404,6 @@ export const setupSocket = (server) => {
       connectedUsers.delete(socket.userId);
       await User.findByIdAndUpdate(socket.userId, { isOnline: false });
       
-      console.log(`Emitting user:status offline for user ${socket.userId}`);
       socket.broadcast.emit('user:status', { userId: socket.userId, isOnline: false });
     });
   });

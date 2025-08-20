@@ -33,21 +33,54 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState(null);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [otherUserTypingName, setOtherUserTypingName] = useState('');
-  const [otherUserOnline, setOtherUserOnline] = useState(isOnline === 'true');
+  const [isUserTyping, setIsUserTyping] = useState(false); // Track if current user is typing
   
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const pendingMessages = useRef(new Map());
+  const typingRefreshIntervalRef = useRef(null); // For continuous typing refresh
 
   useEffect(() => {
     if (conversationId) {
       joinConversation(conversationId);
-      return () => leaveConversation(conversationId);
+      return () => {
+        leaveConversation(conversationId);
+        // Clear typing indicator when leaving conversation
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
+        }
+        if (typingRefreshIntervalRef.current) {
+          clearInterval(typingRefreshIntervalRef.current);
+          typingRefreshIntervalRef.current = null;
+        }
+        setIsUserTyping(false);
+        sendTypingIndicator(conversationId, false);
+      };
     }
   }, [conversationId]);
 
+  // Cleanup typing indicator when component unmounts
   useEffect(() => {
-    if (socket) {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      if (typingRefreshIntervalRef.current) {
+        clearInterval(typingRefreshIntervalRef.current);
+        typingRefreshIntervalRef.current = null;
+      }
+      if (conversationId) {
+        setIsUserTyping(false);
+        sendTypingIndicator(conversationId, false);
+      }
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (socket && conversationId) {
+      
       socket.on('message:new', handleNewMessage);
       socket.on('message:status', handleMessageStatus);
       socket.on('user:typing', handleUserTyping);
@@ -62,7 +95,7 @@ export default function ChatScreen() {
         socket.off('user:status');
       };
     }
-  }, [socket]);
+  }, [socket, conversationId]);
 
   useEffect(() => {
     if (socket && isConnected && conversationId) {
@@ -102,8 +135,11 @@ export default function ChatScreen() {
   const initializeChat = async () => {
     try {
       setLoading(true);
+      
       const conversation = await conversationsAPI.createConversation([user.id, userId]);
+      
       setConversationId(conversation._id);
+      
       const existingMessages = await conversationsAPI.getConversationMessages(conversation._id);
       const sortedMessages = existingMessages.sort((a, b) => 
         new Date(a.createdAt) - new Date(b.createdAt)
@@ -171,26 +207,64 @@ export default function ChatScreen() {
   };
 
   const handleUserStatus = ({ userId: statusUserId, isOnline }) => {
-    if (statusUserId === userId) {
-      setOtherUserOnline(isOnline);
-    }
+    // Handle user status updates if needed
   };
 
   const handleTyping = (text) => {
     setNewMessage(text);
-    if (conversationId) {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
+  
+    if (!conversationId) return;
+  
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+  
+    // If user is typing, always send typing indicator (not only on first char)
+    if (text.length > 0) {
+      if (!isUserTyping) {
+        // Only set to true the first time
+        setIsUserTyping(true);
+        sendTypingIndicator(conversationId, true);
+      } else {
+        // Refresh typing indicator while still typing
+        sendTypingIndicator(conversationId, true);
       }
-      sendTypingIndicator(conversationId, true);
+  
+      // Reset the timeout: if no input after 3s, mark as stopped
       typingTimeoutRef.current = setTimeout(() => {
+        setIsUserTyping(false);
         sendTypingIndicator(conversationId, false);
-      }, 1000);
+      }, 3000);
+    } else {
+      // If text cleared, stop typing immediately
+      setIsUserTyping(false);
+      sendTypingIndicator(conversationId, false);
     }
   };
+  
 
   const sendMessageHandler = () => {
     if (!newMessage.trim() || !conversationId || !isConnected) return;
+    
+    
+    // Clear typing indicator immediately when sending message
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    
+    // Clear typing refresh interval
+    if (typingRefreshIntervalRef.current) {
+      clearInterval(typingRefreshIntervalRef.current);
+      typingRefreshIntervalRef.current = null;
+    }
+    
+    // Clear typing state
+    setIsUserTyping(false);
+    
+    sendTypingIndicator(conversationId, false);
+    
     const clientTempId = `temp_${Date.now()}`;
     const messageData = {
       _id: clientTempId,
@@ -204,7 +278,6 @@ export default function ChatScreen() {
     pendingMessages.current.set(clientTempId, clientTempId);
     setMessages(prev => [...prev, messageData]);
     setNewMessage('');
-    sendTypingIndicator(conversationId, false);
     sendMessage(conversationId, newMessage.trim(), 'text', clientTempId);
   };
 
@@ -260,6 +333,14 @@ export default function ChatScreen() {
     }
   };
 
+  // Monitor typing indicator state changes
+  useEffect(() => {
+  }, [isUserTyping, conversationId]);
+
+  // Monitor conversation ID changes
+  useEffect(() => {
+  }, [conversationId]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -286,10 +367,10 @@ export default function ChatScreen() {
             <View style={styles.statusRow}>
               <View style={[
                 styles.statusDot,
-                { backgroundColor: otherUserOnline ? '#4CAF50' : '#9E9E9E' }
+                { backgroundColor: isOnline === 'true' ? '#4CAF50' : '#9E9E9E' }
               ]} />
               <Text style={styles.statusText}>
-                {otherUserOnline ? 'Online' : 'Offline'}
+                {isOnline === 'true' ? 'Online' : 'Offline'}
               </Text>
             </View>
           </View>
@@ -418,5 +499,5 @@ const styles = StyleSheet.create({
   textInput: { flex: 1, borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, maxHeight: 100, marginRight: 10, fontSize: 16, minHeight: 44 },
   sendButton: { backgroundColor: '#007AFF', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   sendButtonDisabled: { backgroundColor: '#E5E5EA' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: Platform.OS === 'android' ? 25 : 0 }
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: Platform.OS === 'android' ? 25 : 0 },
 });

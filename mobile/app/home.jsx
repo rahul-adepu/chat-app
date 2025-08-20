@@ -51,7 +51,6 @@ export default function HomeScreen() {
     React.useCallback(() => {
       // Refresh users when screen comes into focus (e.g., returning from chat)
       if (isConnected) {
-        console.log('Home screen focused, refreshing users to get latest unread counts');
         fetchUsers();
       }
     }, [isConnected])
@@ -61,7 +60,6 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       // This will run every time the screen comes into focus
-      console.log('Home screen focused, ensuring unread counts are cleared');
     }, [])
   );
 
@@ -78,9 +76,7 @@ export default function HomeScreen() {
 
   // Handle socket connection changes
   useEffect(() => {
-    console.log('Socket connection status changed:', { isConnected, hasSocket: !!socket });
     if (isConnected && socket) {
-      console.log('Socket is connected, setting up listeners');
       // The main socket effect will handle setting up listeners
     }
   }, [isConnected, socket]);
@@ -100,7 +96,6 @@ export default function HomeScreen() {
 
   // Force clear unread count for a specific user (called when returning from chat)
   const clearUnreadCount = (userId) => {
-    console.log('Clearing unread count for user:', userId);
     setUsers(prev => prev.map(u =>
       u._id === userId ? { ...u, unreadCount: 0 } : u
     ));
@@ -108,20 +103,18 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (socket && isConnected) {
-      console.log('Setting up socket listeners in home screen');
-      
       // Set up event listeners
       socket.on('user:status', handleUserStatus);
       socket.on('conversation:unreadUpdate', handleUnreadUpdate);
       
       // Add a test listener to verify socket is working
       socket.on('connect', () => {
-        console.log('Socket connected in home screen');
+        // Socket connected
       });
 
       // Test response listener
       socket.on('test:pong', (data) => {
-        console.log('Test pong received from server:', data);
+        // Test response received
       });
 
       // Listen for new messages to update unread counts
@@ -132,11 +125,8 @@ export default function HomeScreen() {
       
       // Refresh users immediately when socket connects to get latest status
       fetchUsers();
-      
-      console.log('Socket listeners set up successfully');
 
       return () => {
-        console.log('Cleaning up socket listeners in home screen');
         socket.off('user:status');
         socket.off('conversation:unreadUpdate');
         socket.off('connect');
@@ -148,20 +138,15 @@ export default function HomeScreen() {
   }, [socket, isConnected]);
 
   const handleUserStatus = ({ userId, isOnline }) => {
-    console.log('User status update received in home screen:', { userId, isOnline });
-    console.log('Current users before update:', users.map(u => ({ id: u._id, username: u.username, isOnline: u.isOnline })));
-    
     setUsers(prev => {
       const updated = prev.map(user => 
         user._id === userId ? { ...user, isOnline } : user
       );
-      console.log('Users after update:', updated.map(u => ({ id: u._id, username: u.username, isOnline: u.isOnline })));
       return updated;
     });
   };
 
   const handleNewMessage = (message) => {
-    console.log('New message received in home screen:', message);
     
     // Update the user's last message and unread count
     setUsers(prev => prev.map(user => {
@@ -179,12 +164,10 @@ export default function HomeScreen() {
 
   // Handle message status updates (delivered, read)
   const handleMessageStatusUpdate = ({ messageId, status, conversationId, readBy }) => {
-    console.log('Message status update in home screen:', { messageId, status, conversationId, readBy });
     
     if (status === 'read') {
       // When a message is read, we don't need to update unread count here
       // The unread count will be updated by the conversation:unreadUpdate event
-      console.log('Message read, waiting for unread count update');
     }
   };
 
@@ -200,7 +183,6 @@ export default function HomeScreen() {
   };
 
   const handleUnreadUpdate = ({ conversationId, unreadCount, senderId, senderUsername, updatedBy, action }) => {
-    console.log('Unread update received:', { conversationId, unreadCount, senderId, senderUsername, updatedBy, action });
     
     setUsers(prev => prev.map(u => {
       // If this user has this conversationId, update their unread count
@@ -216,7 +198,6 @@ export default function HomeScreen() {
           updatedUser.lastMessageTime = new Date();
         }
         
-        console.log(`Updated unread count for user ${u.username}: ${unreadCount}`);
         return updatedUser;
       }
       return u;
@@ -225,7 +206,6 @@ export default function HomeScreen() {
 
   // Force clear unread count for a specific conversation
   const forceClearUnreadCount = (conversationId) => {
-    console.log('Force clearing unread count for conversation:', conversationId);
     setUsers(prev => prev.map(u => {
       if (u.conversationId === conversationId) {
         return { ...u, unreadCount: 0 };
@@ -239,14 +219,11 @@ export default function HomeScreen() {
     const selectedUser = users.find(u => u._id === userId);
     
     if (selectedUser && selectedUser.conversationId) {
-      console.log('Opening chat with user:', username, 'conversation:', selectedUser.conversationId);
-      
       // Force clear unread count immediately
       forceClearUnreadCount(selectedUser.conversationId);
       
       // Also emit the socket event immediately to ensure it's processed
       if (socket && isConnected) {
-        console.log('Emitting markAllRead immediately for conversation:', selectedUser.conversationId);
         socket.emit('conversation:markAllRead', { conversationId: selectedUser.conversationId });
       }
     }
@@ -254,36 +231,6 @@ export default function HomeScreen() {
     router.push({
       pathname: '/chat',
       params: { username, userId, isOnline: isOnline.toString() }
-    });
-  };
-
-  // Force refresh users list to get latest online status
-  const forceRefreshUsers = () => {
-    console.log('Manual refresh triggered');
-    fetchUsers();
-  };
-
-  // Test socket connection and events
-  const testSocketConnection = () => {
-    if (socket && isConnected) {
-      console.log('Testing socket connection...');
-      console.log('Socket ID:', socket.id);
-      console.log('Is connected:', socket.connected);
-      
-      // Try to emit a test event
-      socket.emit('test:ping', { message: 'Hello from home screen' });
-    } else {
-      console.log('Socket not available or not connected');
-    }
-  };
-
-  // Test function to see current unread counts
-  const testUnreadCounts = () => {
-    console.log('Current users with unread counts:');
-    users.forEach(user => {
-      if (user.unreadCount > 0) {
-        console.log(`${user.username}: ${user.unreadCount} unread`);
-      }
     });
   };
 
@@ -389,15 +336,6 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Chats</Text>
         <View style={styles.headerButtons}>
-          <TouchableOpacity onPress={testSocketConnection} style={styles.testButton}>
-            <Ionicons name="bug" size={24} color="#FF9500" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={testUnreadCounts} style={styles.testUnreadButton}>
-            <Ionicons name="chatbubble" size={24} color="#FF6B6B" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={forceRefreshUsers} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={24} color="#007AFF" />
-          </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
             <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
           </TouchableOpacity>
@@ -444,15 +382,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10
-  },
-  testButton: {
-    padding: 8
-  },
-  testUnreadButton: {
-    padding: 8
-  },
-  refreshButton: {
-    padding: 8
   },
   logoutButton: {
     padding: 8

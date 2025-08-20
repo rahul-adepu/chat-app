@@ -34,12 +34,10 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('connect', () => {
-        console.log('Socket connected successfully');
         setIsConnected(true);
       });
 
       newSocket.on('disconnect', () => {
-        console.log('Socket disconnected');
         setIsConnected(false);
       });
 
@@ -70,31 +68,25 @@ export const SocketProvider = ({ children }) => {
   }, [isAuthenticated, user]);
 
   const joinConversation = (conversationId) => {
-    if (socket && isConnected) {
-      console.log(`Joining conversation room: ${conversationId}`);
+    if (socket && (isConnected || socket.connected)) {
       socket.emit('join:conversation', conversationId);
-    } else {
-      console.log(`Cannot join conversation: socket=${!!socket}, connected=${isConnected}`);
     }
   };
 
   const leaveConversation = (conversationId) => {
-    if (socket && isConnected) {
-      console.log(`Leaving conversation room: ${conversationId}`);
+    if (socket && (isConnected || socket.connected)) {
       socket.emit('leave:conversation', conversationId);
-    } else {
-      console.log(`Cannot leave conversation: socket=${!!socket}, connected=${isConnected}`);
     }
   };
 
   const sendMessage = (conversationId, content, messageType = 'text', clientTempId) => {
-    if (socket && isConnected) {
+    if (socket && (isConnected || socket.connected)) {
       socket.emit('message:send', { conversationId, content, messageType, clientTempId });
     }
   };
 
   const sendTypingIndicator = (conversationId, isTyping) => {
-    if (socket && isConnected) {
+    if (socket && (isConnected || socket.connected)) {
       socket.emit('message:typing', { conversationId, isTyping });
     }
   };
