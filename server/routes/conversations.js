@@ -98,9 +98,13 @@ conversationsRouter.get("/:conversationId/messages", auth, async (req, res) => {
     const messages = await Message.find({ conversationId })
       .populate("sender", "username")
       .sort({ createdAt: -1 })
-      .limit(50);
+      .limit(50)
+      .lean();
 
-    res.json(messages);
+    // Attach conversationId on each message for client-side mapping
+    const withConv = messages.map(m => ({ ...m, conversationId }));
+
+    res.json(withConv);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });

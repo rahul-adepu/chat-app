@@ -56,7 +56,8 @@ export const setupSocket = (server) => {
 
     socket.on('join:conversation', (conversationId) => {
       socket.join(conversationId);
-      console.log(`User ${socket.username} joined conversation: ${conversationId}`);
+      console.log(`User ${socket.username} (${socket.userId}) joined conversation: ${conversationId}`);
+      console.log(`Socket ${socket.id} is now in rooms:`, Array.from(socket.rooms));
     });
 
     socket.on('leave:conversation', (conversationId) => {
@@ -117,7 +118,8 @@ export const setupSocket = (server) => {
     });
 
     socket.on('message:send', async (data) => {
-      const { conversationId, content, messageType = 'text' } = data;
+      const { conversationId, content, messageType = 'text', clientTempId } = data;
+      console.log(`Message send request from ${socket.username}:`, { conversationId, content, clientTempId });
       
       try {
         const Message = (await import('./models/Message.js')).default;
@@ -130,16 +132,11 @@ export const setupSocket = (server) => {
           messageType,
           deliveredAt: new Date(),
           status: 'sent',
-          isSenderOnline: true // Set to true since sender is currently online
+          isSenderOnline: true
         });
 
         await message.save();
-
-        console.log('Message created with online status:', {
-          messageId: message._id,
-          senderId: socket.userId,
-          isSenderOnline: message.isSenderOnline
-        });
+        console.log(`Message saved with ID: ${message._id}`);
 
         const conversation = await Conversation.findById(conversationId);
         if (conversation) {
@@ -148,22 +145,37 @@ export const setupSocket = (server) => {
           conversation.lastMessageTime = new Date();
           
           const otherParticipant = conversation.participants.find(p => p.toString() !== socket.userId);
-          const currentUnreadCount = conversation.unreadCount.get(otherParticipant) || 0;
-          conversation.unreadCount.set(otherParticipant, currentUnreadCount + 1);
+          const otherKey = otherParticipant.toString();
+          const currentUnreadCount = conversation.unreadCount.get(otherKey) || 0;
+          conversation.unreadCount.set(otherKey, currentUnreadCount + 1);
           
           await conversation.save();
+          console.log(`Updated conversation ${conversationId}, unread count for ${otherKey}: ${conversation.unreadCount.get(otherKey)}`);
+
+          // Emit unread badge update to receiver
+          const receiverSocketId = connectedUsers.get(otherKey)?.socketId;
+          if (receiverSocketId) {
+            console.log(`Emitting unread update to ${otherKey} (socket: ${receiverSocketId})`);
+            io.to(receiverSocketId).emit('conversation:unreadUpdate', {
+              conversationId,
+              unreadCount: conversation.unreadCount.get(otherKey) || 0
+            });
+          } else {
+            console.log(`Receiver ${otherKey} not connected, cannot emit unread update`);
+          }
         }
 
-        const populatedMessage = await Message.findById(message._id)
-          .populate('sender', 'username');
+        let populatedMessage = await Message.findById(message._id)
+          .populate('sender', 'username')
+          .lean();
+        populatedMessage.clientTempId = clientTempId || null;
 
-        // Emit to all users in conversation (including sender for confirmation)
+        console.log(`Broadcasting message:new to conversation ${conversationId}`);
+        console.log(`Socket ${socket.id} is in rooms:`, Array.from(socket.rooms));
+        console.log(`Broadcasting to room ${conversationId}, connected users:`, Array.from(connectedUsers.keys()));
         io.to(conversationId).emit('message:new', populatedMessage);
+        socket.emit('message:sent', { messageId: message._id, status: 'sent', conversationId, clientTempId });
         
-        // Send delivery confirmation to sender
-        socket.emit('message:sent', { messageId: message._id, status: 'sent' });
-        
-        // Mark as delivered after a short delay
         setTimeout(async () => {
           try {
             await Message.findByIdAndUpdate(message._id, { 
@@ -171,32 +183,35 @@ export const setupSocket = (server) => {
               deliveredAt: new Date()
             });
             
-            // Check if sender is online
             const senderSocketId = connectedUsers.get(socket.userId)?.socketId;
             const isSenderOnline = !!senderSocketId;
             
             socket.emit('message:status', { 
               messageId: message._id, 
               status: 'delivered',
-              isSenderOnline
+              isSenderOnline,
+              conversationId,
+              clientTempId
             });
             
-            // Emit to conversation for real-time status updates
             io.to(conversationId).emit('message:status', { 
               messageId: message._id, 
               status: 'delivered',
-              isSenderOnline
+              isSenderOnline,
+              conversationId,
+              clientTempId
             });
 
             console.log('Emitted delivered status:', {
               messageId: message._id,
               status: 'delivered',
-              isSenderOnline
+              isSenderOnline,
+              conversationId
             });
           } catch (error) {
             console.error('Error updating message status to delivered:', error);
           }
-        }, 1000);
+        }, 300);
 
       } catch (error) {
         console.error('Error sending message:', error);
@@ -220,37 +235,28 @@ export const setupSocket = (server) => {
           }
           await message.save();
 
-          // Check if sender is online to determine read receipt style
           const senderSocketId = connectedUsers.get(message.sender.toString())?.socketId;
           const isSenderOnline = !!senderSocketId;
 
-          console.log('Message read - Sender online status:', {
-            messageId,
-            senderId: message.sender.toString(),
-            senderSocketId,
-            isSenderOnline
-          });
-
-          // Update the message in database with online status
           await Message.findByIdAndUpdate(messageId, { isSenderOnline });
 
-          // Emit read status to all users in conversation
           io.to(conversationId).emit('message:status', {
             messageId,
             status: 'read',
             readBy: socket.userId,
             readAt: message.readAt,
-            isSenderOnline
+            isSenderOnline,
+            conversationId
           });
 
           console.log('Emitted read status:', {
             messageId,
             status: 'read',
             readBy: socket.userId,
-            isSenderOnline
+            isSenderOnline,
+            conversationId
           });
 
-          // Update conversation unread count
           const Conversation = (await import('./models/Conversation.js')).default;
           const conversation = await Conversation.findById(conversationId);
           if (conversation) {
@@ -259,7 +265,6 @@ export const setupSocket = (server) => {
               conversation.unreadCount.set(socket.userId, currentUnreadCount - 1);
               await conversation.save();
               
-              // Emit updated unread count to all participants
               conversation.participants.forEach(participantId => {
                 const participantSocketId = connectedUsers.get(participantId.toString())?.socketId;
                 if (participantSocketId) {
@@ -275,6 +280,14 @@ export const setupSocket = (server) => {
       } catch (error) {
         console.error('Error marking message as read:', error);
       }
+    });
+
+    // Typing aliases per spec
+    socket.on('typing:start', ({ conversationId }) => {
+      socket.to(conversationId).emit('user:typing', { userId: socket.userId, username: socket.username, isTyping: true, conversationId });
+    });
+    socket.on('typing:stop', ({ conversationId }) => {
+      socket.to(conversationId).emit('user:typing', { userId: socket.userId, username: socket.username, isTyping: false, conversationId });
     });
 
     socket.on('disconnect', async () => {

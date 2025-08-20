@@ -11,7 +11,7 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from './utils/AuthContext.js';
 import { useSocket } from './utils/SocketContext.js';
 import { usersAPI } from './services/api.js';
@@ -46,14 +46,24 @@ export default function HomeScreen() {
     fetchUsers();
   }, []);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      // Refresh users when screen comes into focus (e.g., returning from chat)
+      fetchUsers();
+    }, [])
+  );
+
   useEffect(() => {
     if (socket) {
+      console.log('Setting up socket listeners in home screen');
+      
       socket.on('user:status', handleUserStatus);
-      socket.on('message:status', handleMessageStatus);
+      socket.on('conversation:unreadUpdate', handleUnreadUpdate);
 
       return () => {
+        console.log('Cleaning up socket listeners in home screen');
         socket.off('user:status');
-        socket.off('message:status');
+        socket.off('conversation:unreadUpdate');
       };
     }
   }, [socket]);
@@ -75,7 +85,25 @@ export default function HomeScreen() {
     }
   };
 
+  const handleUnreadUpdate = ({ conversationId, unreadCount }) => {
+    console.log('Unread update received:', { conversationId, unreadCount });
+    
+    setUsers(prev => prev.map(u => {
+      // If this user has this conversationId, update their unread count
+      if (u.conversationId === conversationId) {
+        console.log(`Updating unread count for user ${u.username}: ${unreadCount}`);
+        return { ...u, unreadCount };
+      }
+      return u;
+    }));
+  };
+
   const handleUserPress = (username, userId) => {
+    // Optimistically clear unread for the tapped user
+    setUsers(prev => prev.map(u =>
+      u._id === userId ? { ...u, unreadCount: 0 } : u
+    ));
+
     router.push({
       pathname: '/chat',
       params: { username, userId }

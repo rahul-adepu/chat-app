@@ -29,9 +29,10 @@ router.get('/', auth, async (req, res) => {
       return {
         ...user,
         hasConversation: !!conversation,
+        conversationId: conversation?._id || null,
         lastMessage: conversation?.lastMessage || null,
         lastMessageTime: conversation?.lastMessageTime || null,
-        unreadCount: conversation?.unreadCount?.get(req.user.id) || 0
+        unreadCount: conversation?.unreadCount?.get(req.user.id) || 0 // Fix: get unread count for the current user from this conversation
       };
     });
 

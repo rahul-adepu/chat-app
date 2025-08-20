@@ -125,32 +125,40 @@ export default function ChatScreen() {
   }, [messages]);
 
   const handleNewMessage = (message) => {
-    console.log('Received new message:', message._id, 'from pending:', pendingMessages.current.has(message._id));
+    const { _id, clientTempId } = message;
+    console.log('Received new message:', _id, 'clientTempId:', clientTempId, 'pendingHasTemp:', clientTempId ? pendingMessages.current.has(clientTempId) : false);
     
-    // Check if this message is already in our pending messages
-    if (pendingMessages.current.has(message._id)) {
-      // Update the pending message with the real message data
-      setMessages(prev => prev.map(msg => 
-        msg._id === pendingMessages.current.get(message._id) ? message : msg
-      ));
-      pendingMessages.current.delete(message._id);
-    } else {
-      // Add new message to the end (since we're not using inverted FlatList)
-      setMessages(prev => [...prev, message]);
+    if (clientTempId && pendingMessages.current.has(clientTempId)) {
+      // Replace temp message with real message
+      setMessages(prev => prev.map(msg => (msg._id === clientTempId ? message : msg)));
+      pendingMessages.current.delete(clientTempId);
+      return;
     }
     
-    // Mark message as read if it's from the other user
+    // If message id itself is tracked as pending (fallback)
+    if (pendingMessages.current.has(_id)) {
+      setMessages(prev => prev.map(msg => (msg._id === _id ? message : msg)));
+      pendingMessages.current.delete(_id);
+      return;
+    }
+
+    setMessages(prev => [...prev, message]);
+
     if (message.sender._id !== user.id && conversationId) {
       markMessageAsRead(conversationId, message._id);
     }
   };
 
 
-  const handleMessageSent = ({ messageId, status }) => {
-    console.log('Message sent update received:', { messageId, status });
+  const handleMessageSent = ({ messageId, status, conversationId: sentConvId }) => {
+    console.log('Message sent update received:', { messageId, status, sentConvId });
     setMessages(prev => prev.map(msg => 
       msg._id === messageId ? { ...msg, status } : msg
     ));
+    // Clear pending map if server echoed back the same ID (when server uses DB ID)
+    if (pendingMessages.current.has(messageId)) {
+      pendingMessages.current.delete(messageId);
+    }
   };
 
   const handleUserTyping = ({ userId: typingUserId, username: typingUsername, isTyping, conversationId: typingConversationId }) => {
@@ -188,27 +196,24 @@ export default function ChatScreen() {
   const sendMessageHandler = () => {
     if (!newMessage.trim() || !conversationId || !isConnected) return;
     
-    const tempId = `temp_${Date.now()}`;
+    const clientTempId = `temp_${Date.now()}`;
     const messageData = {
-      _id: tempId,
+      _id: clientTempId,
       content: newMessage.trim(),
       sender: { _id: user.id, username: user.username },
       createdAt: new Date(),
-      status: 'sending'
+      status: 'sending',
+      isSenderOnline: true,
+      conversationId
     };
     
-    // Add to pending messages map with the temp ID
-    pendingMessages.current.set(tempId, tempId);
-    
-    // Add message to UI immediately
+    pendingMessages.current.set(clientTempId, clientTempId);
     setMessages(prev => [...prev, messageData]);
     setNewMessage('');
-    
-    // Stop typing indicator
     sendTypingIndicator(conversationId, false);
     
-    // Send message via socket
-    sendMessage(conversationId, newMessage.trim());
+    // Send with clientTempId so server can echo back
+    sendMessage(conversationId, newMessage.trim(), 'text', clientTempId);
   };
 
   const getMessageStatusIcon = (status, isOwnMessage, isSenderOnline) => {
@@ -248,9 +253,9 @@ export default function ChatScreen() {
   };
   
   // In the handleMessageStatus function, ensure that the status is updated correctly
-  const handleMessageStatus = ({ messageId, status, isSenderOnline }) => {
-    console.log('Message status update received:', { messageId, status, isSenderOnline });
-  
+  const handleMessageStatus = ({ messageId, status, isSenderOnline, conversationId: statusConvId }) => {
+    console.log('Message status update received:', { messageId, status, isSenderOnline, statusConvId });
+    
     setMessages(prev => prev.map(msg => {
       if (msg._id === messageId) {
         const updatedMsg = { ...msg, status, isSenderOnline };
@@ -260,6 +265,17 @@ export default function ChatScreen() {
       return msg;
     }));
   };
+
+  useEffect(() => {
+    if (socket) {
+      const onUnreadUpdate = ({ conversationId: convId, unreadCount }) => {
+        // Bubble up to home via event (optional) or keep local state; here we do nothing in chat
+        console.log('Unread update for conversation', convId, unreadCount);
+      };
+      socket.on('conversation:unreadUpdate', onUnreadUpdate);
+      return () => socket.off('conversation:unreadUpdate', onUnreadUpdate);
+    }
+  }, [socket]);
   
 
   const renderMessage = ({ item }) => {

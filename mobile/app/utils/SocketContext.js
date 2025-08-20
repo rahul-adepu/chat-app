@@ -34,7 +34,7 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('connect', () => {
-        console.log('Socket connected');
+        console.log('Socket connected successfully');
         setIsConnected(true);
       });
 
@@ -44,8 +44,12 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
+        console.error('Socket connection error:', error.message);
         setIsConnected(false);
+      });
+
+      newSocket.on('error', (error) => {
+        console.error('Socket error:', error);
       });
 
       setSocket(newSocket);
@@ -58,19 +62,25 @@ export const SocketProvider = ({ children }) => {
 
   const joinConversation = (conversationId) => {
     if (socket && isConnected) {
+      console.log(`Joining conversation room: ${conversationId}`);
       socket.emit('join:conversation', conversationId);
+    } else {
+      console.log(`Cannot join conversation: socket=${!!socket}, connected=${isConnected}`);
     }
   };
 
   const leaveConversation = (conversationId) => {
     if (socket && isConnected) {
+      console.log(`Leaving conversation room: ${conversationId}`);
       socket.emit('leave:conversation', conversationId);
+    } else {
+      console.log(`Cannot leave conversation: socket=${!!socket}, connected=${isConnected}`);
     }
   };
 
-  const sendMessage = (conversationId, content, messageType = 'text') => {
+  const sendMessage = (conversationId, content, messageType = 'text', clientTempId) => {
     if (socket && isConnected) {
-      socket.emit('message:send', { conversationId, content, messageType });
+      socket.emit('message:send', { conversationId, content, messageType, clientTempId });
     }
   };
 
