@@ -1,118 +1,305 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  ActivityIndicator,
+  RefreshControl
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from './utils/AuthContext.js';
 import { usersAPI } from './services/api.js';
 
 export default function HomeScreen() {
-  const router = useRouter();
-  const { user, logout } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  const [refreshing, setRefreshing] = useState(false);
+  const { user, logout } = useAuth();
+  const router = useRouter();
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const allUsers = await usersAPI.getAllUsers();
-      const filteredUsers = allUsers.filter(u => u._id !== user.id);
-      setUsers(filteredUsers);
+      const usersData = await usersAPI.getAllUsers();
+      setUsers(usersData);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load users');
+      console.error('Error fetching users:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Logout', 
-        onPress: () => {
-          logout();
-          router.replace('/');
-        }
-      }
-    ]);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchUsers();
+    setRefreshing(false);
   };
 
-  const renderUser = ({ item }) => (
-    <TouchableOpacity 
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleUserPress = (username, userId) => {
+    router.push({
+      pathname: '/chat',
+      params: { username, userId }
+    });
+  };
+
+  const handleLogout = () => {
+    logout();
+    router.replace('/');
+  };
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = (now - date) / (1000 * 60 * 60);
+    
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      });
+    } else if (diffInHours < 48) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    }
+  };
+
+  const truncateMessage = (message, maxLength = 30) => {
+    if (!message) return '';
+    return message.length > maxLength 
+      ? message.substring(0, maxLength) + '...' 
+      : message;
+  };
+
+  const renderUserItem = ({ item }) => (
+    <TouchableOpacity
       style={styles.userItem}
-      onPress={() => router.push({
-        pathname: '/chat',
-        params: { username: item.username, userId: item._id }
-      })}
+      onPress={() => handleUserPress(item.username, item._id)}
     >
-      <View style={styles.avatarContainer}>
-        <Text style={styles.avatarText}>{item.username.charAt(0).toUpperCase()}</Text>
-      </View>
       <View style={styles.userInfo}>
-        <Text style={styles.username}>{item.username}</Text>
-        <Text style={styles.email}>{item.email}</Text>
+        <View style={styles.avatarContainer}>
+          <Text style={styles.avatarText}>
+            {item.username.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        
+        <View style={styles.userDetails}>
+          <View style={styles.nameRow}>
+            <Text style={styles.username}>{item.username}</Text>
+            <View style={styles.statusContainer}>
+              <View style={[
+                styles.statusDot,
+                { backgroundColor: item.isOnline ? '#4CAF50' : '#9E9E9E' }
+              ]} />
+              <Text style={styles.statusText}>
+                {item.isOnline ? 'Online' : 'Offline'}
+              </Text>
+            </View>
+          </View>
+          
+          {item.hasConversation && item.lastMessage ? (
+            <View style={styles.messagePreview}>
+              <Text style={styles.lastMessage} numberOfLines={1}>
+                {truncateMessage(item.lastMessage.content)}
+              </Text>
+              <Text style={styles.messageTime}>
+                {formatTime(item.lastMessageTime)}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.noMessage}>No messages yet</Text>
+          )}
+        </View>
       </View>
-      <View style={styles.statusContainer}>
-        <View style={[styles.statusDot, { backgroundColor: item.isOnline ? '#27ae60' : '#95a5a6' }]} />
-        <Text style={styles.statusText}>{item.isOnline ? 'Online' : 'Offline'}</Text>
-      </View>
+      
+      {item.unreadCount > 0 && (
+        <View style={styles.unreadBadge}>
+          <Text style={styles.unreadCount}>
+            {item.unreadCount > 99 ? '99+' : item.unreadCount}
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Loading users...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
       <View style={styles.header}>
         <Text style={styles.title}>Chats</Text>
         <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
+          <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
         </TouchableOpacity>
       </View>
-      <View style={styles.userInfoHeader}>
-        <Text style={styles.welcomeText}>Welcome, {user?.username}!</Text>
-        <Text style={styles.subtitle}>Select a user to start chatting</Text>
-      </View>
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading users...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={users}
-          renderItem={renderUser}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.userList}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+
+      <FlatList
+        data={users}
+        renderItem={renderUserItem}
+        keyExtractor={(item) => item._id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContainer}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#e1e8ed' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#2c3e50' },
-  logoutButton: { padding: 8 },
-  userInfoHeader: { paddingHorizontal: 20, paddingVertical: 20, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e1e8ed' },
-  welcomeText: { fontSize: 18, fontWeight: '600', color: '#2c3e50', marginBottom: 5 },
-  subtitle: { fontSize: 14, color: '#7f8c8d' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: '#7f8c8d' },
-  userList: { paddingVertical: 10 },
-  userItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#ffffff', marginHorizontal: 20, marginVertical: 5, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
-  avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#3498db', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  avatarText: { fontSize: 20, fontWeight: 'bold', color: '#ffffff' },
-  userInfo: { flex: 1 },
-  username: { fontSize: 16, fontWeight: '600', color: '#2c3e50', marginBottom: 2 },
-  email: { fontSize: 14, color: '#7f8c8d' },
-  statusContainer: { alignItems: 'center' },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginBottom: 5 },
-  statusText: { fontSize: 12, color: '#7f8c8d' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F2F2F7'
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA'
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#000000'
+  },
+  logoutButton: {
+    padding: 8
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#8E8E93'
+  },
+  listContainer: {
+    paddingVertical: 10
+  },
+  userItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 10,
+    marginVertical: 5,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  userInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  avatarContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold'
+  },
+  userDetails: {
+    flex: 1
+  },
+  nameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5
+  },
+  username: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000'
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 5
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#8E8E93'
+  },
+  messagePreview: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  lastMessage: {
+    flex: 1,
+    fontSize: 14,
+    color: '#8E8E93',
+    marginRight: 10
+  },
+  messageTime: {
+    fontSize: 12,
+    color: '#C7C7CC'
+  },
+  noMessage: {
+    fontSize: 14,
+    color: '#C7C7CC',
+    fontStyle: 'italic'
+  },
+  unreadBadge: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8
+  },
+  unreadCount: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold'
+  }
 });

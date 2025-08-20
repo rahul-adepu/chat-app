@@ -58,8 +58,15 @@ export const authAPI = {
 
 export const usersAPI = {
   getAllUsers: async () => {
-    const response = await api.get('/users');
-    return response.data;
+    try {
+      const token = getAuthToken();
+      const response = await api.get('/users', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   },
 
   getUserById: async (userId) => {
