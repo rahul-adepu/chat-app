@@ -25,32 +25,56 @@ conversationsRouter.get("/", auth, async (req, res) => {
 
 conversationsRouter.post("/", auth, async (req, res) => {
   try {
-    const { participantId } = req.body;
+    const { participantId, participants } = req.body;
     const userId = req.user?.id;
     
-    if (!userId || !participantId) {
-      return res.status(400).json({ message: "Both users are required" });
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
     }
 
-    if (userId === participantId) {
-      return res.status(400).json({ message: "Cannot create conversation with yourself" });
+    let participantIds = [];
+    
+    // Handle both single participantId and array of participants
+    if (participants && Array.isArray(participants)) {
+      participantIds = participants;
+    } else if (participantId) {
+      participantIds = [userId, participantId];
+    } else {
+      return res.status(400).json({ message: "Participant information is required" });
     }
 
+    // Ensure current user is included
+    if (!participantIds.includes(userId)) {
+      participantIds.push(userId);
+    }
+
+    // Remove duplicates
+    participantIds = [...new Set(participantIds)];
+
+    if (participantIds.length < 2) {
+      return res.status(400).json({ message: "At least 2 participants are required" });
+    }
+
+    // Check if conversation already exists
     let conversation = await Conversation.findOne({
-      participants: { $all: [userId, participantId] }
+      participants: { $all: participantIds, $size: participantIds.length }
     });
 
     if (!conversation) {
+      // Create new conversation
+      const unreadCountMap = new Map();
+      participantIds.forEach(id => unreadCountMap.set(id, 0));
+      
       conversation = new Conversation({
-        participants: [userId, participantId],
-        unreadCount: new Map([[participantId, 0], [userId, 0]])
+        participants: participantIds,
+        unreadCount: unreadCountMap
       });
       await conversation.save();
     }
 
     res.json(conversation);
   } catch (err) {
-    console.error(err);
+    console.error('Error creating conversation:', err);
     res.status(500).json({ message: "Server error" });
   }
 });

@@ -81,14 +81,28 @@ export const conversationsAPI = {
     return response.data;
   },
 
-  createConversation: async (participantId) => {
-    const response = await api.post('/conversations', { participantId });
-    return response.data;
+  createConversation: async (participants) => {
+    try {
+      const token = getAuthToken();
+      const response = await api.post('/conversations', { participants }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   },
 
   getConversationMessages: async (conversationId) => {
-    const response = await api.get(`/conversations/${conversationId}/messages`);
-    return response.data;
+    try {
+      const token = getAuthToken();
+      const response = await api.get(`/conversations/${conversationId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   },
 
   sendMessage: async (conversationId, messageData) => {
@@ -97,8 +111,15 @@ export const conversationsAPI = {
   },
 
   markMessageAsRead: async (conversationId, messageId) => {
-    const response = await api.put(`/conversations/${conversationId}/messages/${messageId}/read`);
-    return response.data;
+    try {
+      const token = getAuthToken();
+      const response = await api.put(`/conversations/${conversationId}/messages/${messageId}/read`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   },
 };
 
