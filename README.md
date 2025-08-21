@@ -217,7 +217,7 @@ Authorization: Bearer <jwt-token>
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `EXPO_PUBLIC_API_URL` | Backend API URL | `http://yourWifiIpAddress:backendPortNumber` |
-| `EXPO_PUBLIC_SOCKET_URL` | Socket.IO server URL | `http:yourWifiIpAddress:backendPortNumber` |
+| `EXPO_PUBLIC_SOCKET_URL` | Socket.IO server URL | `http://yourWifiIpAddress:backendPortNumber` |
 
 
 
