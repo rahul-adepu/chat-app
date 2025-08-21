@@ -79,29 +79,52 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (socket && conversationId) {
+      console.log('Setting up socket event listeners for chat screen');
       
       socket.on('message:new', handleNewMessage);
       socket.on('message:status', handleMessageStatus);
       socket.on('user:typing', handleUserTyping);
       socket.on('message:sent', handleMessageSent);
       socket.on('user:status', handleUserStatus);
+      
+      // Handle socket reconnection
+      socket.on('connect', () => {
+        console.log('Socket reconnected in chat, rejoining conversation');
+        if (conversationId) {
+          joinConversation(conversationId);
+          markConversationAsRead(conversationId);
+        }
+      });
 
       return () => {
+        console.log('Cleaning up socket event listeners for chat screen');
         socket.off('message:new');
         socket.off('message:status');
         socket.off('user:typing');
         socket.off('message:sent');
         socket.off('user:status');
+        socket.off('connect');
       };
     }
   }, [socket, conversationId]);
 
+  // Handle socket connection status changes
   useEffect(() => {
     if (socket && isConnected && conversationId) {
+      console.log('Socket connected in chat, marking conversation as read');
       markConversationAsRead(conversationId);
       markAllMessagesAsReadAPI(conversationId);
     }
   }, [socket, isConnected, conversationId]);
+
+  // Handle socket reconnection specifically
+  useEffect(() => {
+    if (socket && isConnected && conversationId) {
+      console.log('Socket reconnected, ensuring conversation is joined and marked as read');
+      joinConversation(conversationId);
+      markConversationAsRead(conversationId);
+    }
+  }, [isConnected, conversationId]);
 
   useFocusEffect(
     React.useCallback(() => {

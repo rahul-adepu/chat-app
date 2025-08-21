@@ -65,9 +65,12 @@ export default function HomeScreen() {
 
   // Refresh users when authentication state changes (login/logout)
   useEffect(() => {
+    console.log('Auth state changed:', authState, 'Socket connected:', isConnected);
     if (authState === 'authenticated' && isConnected) {
+      console.log('User authenticated and socket connected, fetching users');
       fetchUsers();
     } else if (authState === 'unauthenticated') {
+      console.log('User logged out, clearing users');
       // Clear users when logging out
       setUsers([]);
       setLoading(false);
@@ -77,7 +80,9 @@ export default function HomeScreen() {
   // Handle socket connection changes
   useEffect(() => {
     if (isConnected && socket) {
-      // The main socket effect will handle setting up listeners
+      console.log('Socket connected, refreshing user status');
+      // Refresh users immediately when socket connects to get latest status
+      fetchUsers();
     }
   }, [isConnected, socket]);
 
@@ -85,6 +90,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const handleAppStateChange = (nextAppState) => {
       if (nextAppState === 'active' && isConnected) {
+        console.log('App came to foreground, refreshing user status');
         // App came to foreground, refresh user status
         fetchUsers();
       }
@@ -93,6 +99,21 @@ export default function HomeScreen() {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
   }, [isConnected]);
+
+  // Cleanup effect for logout
+  useEffect(() => {
+    if (authState === 'unauthenticated') {
+      console.log('User logged out, cleaning up socket listeners');
+      if (socket) {
+        socket.off('user:status');
+        socket.off('conversation:unreadUpdate');
+        socket.off('connect');
+        socket.off('test:pong');
+        socket.off('message:new');
+        socket.off('message:status');
+      }
+    }
+  }, [authState, socket]);
 
   // Force clear unread count for a specific user (called when returning from chat)
   const clearUnreadCount = (userId) => {
@@ -103,13 +124,16 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (socket && isConnected) {
+      console.log('Setting up socket event listeners for home screen');
+      
       // Set up event listeners
       socket.on('user:status', handleUserStatus);
       socket.on('conversation:unreadUpdate', handleUnreadUpdate);
       
       // Add a test listener to verify socket is working
       socket.on('connect', () => {
-        // Socket connected
+        console.log('Socket reconnected, refreshing users');
+        fetchUsers();
       });
 
       // Test response listener
@@ -127,6 +151,7 @@ export default function HomeScreen() {
       fetchUsers();
 
       return () => {
+        console.log('Cleaning up socket event listeners for home screen');
         socket.off('user:status');
         socket.off('conversation:unreadUpdate');
         socket.off('connect');
