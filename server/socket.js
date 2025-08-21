@@ -215,7 +215,7 @@ export const setupSocket = (server) => {
         const isRecipientOnline = !!recipientSocketId;
         
         if (isRecipientOnline) {
-          // Recipient is online, mark as delivered immediately
+          // Recipient is online, mark as delivered after a short delay to show proper flow
           setTimeout(async () => {
             try {
               await Message.findByIdAndUpdate(message._id, { 
@@ -239,7 +239,7 @@ export const setupSocket = (server) => {
             } catch (error) {
               console.error('Error updating message status to delivered:', error);
             }
-          }, 100);
+          }, 1000); // Increased delay to 1 second to show proper status flow
         } else {
           // Recipient is offline, keep status as 'sent'
           console.log('Message sent but recipient is offline:', {
@@ -336,7 +336,16 @@ export const setupSocket = (server) => {
         const Message = (await import('./models/Message.js')).default;
         const Conversation = (await import('./models/Conversation.js')).default;
         
-        // Mark all unread messages in this conversation as read for the current user
+        // Find all unread messages that will be marked as read
+        const unreadMessages = await Message.find({
+          conversationId, 
+          sender: { $ne: socket.userId },
+          isRead: false 
+        });
+
+        console.log(`Found ${unreadMessages.length} unread messages to mark as read for conversation ${conversationId}, user ${socket.userId}`);
+        
+        // Mark all unread messages as read for the current user
         const result = await Message.updateMany(
           { 
             conversationId, 
@@ -346,13 +355,28 @@ export const setupSocket = (server) => {
           { 
             $set: { 
               isRead: true, 
-              readAt: new Date() 
+              readAt: new Date(),
+              status: 'read'
             },
             $addToSet: { readBy: socket.userId }
           }
         );
 
         console.log(`Marking all messages as read for conversation ${conversationId}, user ${socket.userId}, modified: ${result.modifiedCount}`);
+        
+        // Emit read status for each message to notify the original senders
+        unreadMessages.forEach(message => {
+          // Emit read status to all participants in the conversation
+          io.to(conversationId).emit('message:status', {
+            messageId: message._id,
+            status: 'read',
+            readBy: socket.userId,
+            readAt: new Date(),
+            conversationId
+          });
+          
+          console.log(`Emitted read status for message ${message._id} to conversation ${conversationId}`);
+        });
         
         // Always update conversation unread count and emit update, regardless of whether messages were modified
         const conversation = await Conversation.findById(conversationId);

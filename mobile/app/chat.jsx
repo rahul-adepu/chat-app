@@ -195,27 +195,58 @@ export default function ChatScreen() {
   }, [messages]);
 
   const handleNewMessage = (message) => {
+    console.log('New message received:', { 
+      messageId: message._id, 
+      content: message.content, 
+      sender: message.sender.username,
+      status: message.status 
+    });
+    
     const { _id, clientTempId } = message;
     if (clientTempId && pendingMessages.current.has(clientTempId)) {
+      console.log('Updating pending message with clientTempId:', clientTempId);
       setMessages(prev => prev.map(msg => (msg._id === clientTempId ? message : msg)));
       pendingMessages.current.delete(clientTempId);
       return;
     }
     if (pendingMessages.current.has(_id)) {
+      console.log('Updating pending message with _id:', _id);
       setMessages(prev => prev.map(msg => (msg._id === _id ? message : msg)));
       pendingMessages.current.delete(_id);
       return;
     }
+    
+    console.log('Adding new message to conversation');
     setMessages(prev => [...prev, message]);
+    
     if (message.sender._id !== user.id && conversationId) {
+      console.log('Marking received message as read');
       markMessageAsRead(conversationId, message._id);
     }
   };
 
   const handleMessageSent = ({ messageId, status }) => {
-    setMessages(prev => prev.map(msg => 
-      msg._id === messageId ? { ...msg, status } : msg
-    ));
+    console.log('Message sent status received:', { messageId, status });
+    
+    setMessages(prev => {
+      const updatedMessages = prev.map(msg => 
+        msg._id === messageId ? { ...msg, status } : msg
+      );
+      
+      // Log the updated message
+      const updatedMessage = updatedMessages.find(msg => msg._id === messageId);
+      if (updatedMessage) {
+        console.log('Message sent status updated:', {
+          messageId,
+          oldStatus: prev.find(msg => msg._id === messageId)?.status,
+          newStatus: updatedMessage.status,
+          content: updatedMessage.content
+        });
+      }
+      
+      return updatedMessages;
+    });
+    
     if (pendingMessages.current.has(messageId)) {
       pendingMessages.current.delete(messageId);
     }
@@ -329,16 +360,31 @@ export default function ChatScreen() {
   };
 
   const handleMessageStatus = ({ messageId, status, readBy, readAt }) => {
-    setMessages(prev =>
-      prev.map(msg =>
+    console.log('Message status update received:', { messageId, status, readBy, readAt });
+    
+    setMessages(prev => {
+      const updatedMessages = prev.map(msg =>
         msg._id === messageId ? { 
           ...msg, 
           status,
           readBy: readBy ? [...(msg.readBy || []), readBy] : msg.readBy,
           readAt: readAt || msg.readAt
         } : msg
-      )
-    );
+      );
+      
+      // Log the updated message
+      const updatedMessage = updatedMessages.find(msg => msg._id === messageId);
+      if (updatedMessage) {
+        console.log('Message status updated:', {
+          messageId,
+          oldStatus: prev.find(msg => msg._id === messageId)?.status,
+          newStatus: updatedMessage.status,
+          content: updatedMessage.content
+        });
+      }
+      
+      return updatedMessages;
+    });
   };
 
   const markAllMessagesAsReadAPI = async (conversationId) => {
