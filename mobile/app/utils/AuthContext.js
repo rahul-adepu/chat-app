@@ -39,10 +39,15 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (username, email, password) => {
     try {
+      setAuthState('authenticating');
       const { token, user: userData } = await authAPI.register({ username, email, password });
-      setAuthToken(token);
-      setUser(userData);
+      // Don't set user as authenticated after registration - they need to login
+      // Just clear the token to ensure clean state
+      clearAuthToken();
+      setAuthState('unauthenticated');
+      return { success: true, message: 'Account created successfully! Please sign in.' };
     } catch (error) {
+      setAuthState('unauthenticated');
       throw new Error(getErrorMessage(error));
     }
   };

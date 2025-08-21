@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -16,22 +16,102 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
+  
+  // Check if we're in a web environment
+  const isWeb = typeof window !== 'undefined' && !window.ReactNativeWebView;
 
   const handleRegister = async () => {
-    if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) { Alert.alert('Error', 'Please fill in all fields'); return; }
-    if (password.length < 6) { Alert.alert('Error', 'Password must be at least 6 characters'); return; }
-    if (!/^\S+@\S+\.\S+$/.test(email)) { Alert.alert('Error', 'Please enter a valid email address'); return; }
-    if (password !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); return; }
+    if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) { 
+      Alert.alert('Error', 'Please fill in all fields'); 
+      return; 
+    }
+    if (password.length < 6) { 
+      Alert.alert('Error', 'Password must be at least 6 characters'); 
+      return; 
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) { 
+      Alert.alert('Error', 'Please enter a valid email address'); 
+      return; 
+    }
+    if (password !== confirmPassword) { 
+      Alert.alert('Error', 'Passwords do not match'); 
+      return; 
+    }
+    
     setIsLoading(true);
     try {
-      await register(username.trim(), email.trim(), password);
-      Alert.alert('Success', 'Account created successfully! Please sign in.', [
-        { text: 'OK', onPress: () => router.replace('/auth/login') }
-      ]);
+      const result = await register(username.trim(), email.trim(), password);
+      
+      // Clear form fields
+      setUsername('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      
+      // Show success message and set redirect flag
+      // In web environments, alerts can be unreliable, so we set redirect immediately
+      setShouldRedirect(true);
+      
+      // Show alert for user feedback
+      if (isWeb) {
+        // In web, show a simple alert and redirect immediately
+        alert(result.message);
+      } else {
+        // In mobile, use the native Alert component
+        Alert.alert('Success', result.message, [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              // Alert dismissed, but redirect should already be happening
+            }
+          }
+        ]);
+      }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Registration failed. Please try again.');
-    } finally { setIsLoading(false); }
+      const errorMessage = error.message || 'Registration failed. Please try again.';
+      if (isWeb) {
+        alert('Error: ' + errorMessage);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
+    } finally { 
+      setIsLoading(false); 
+    }
   };
+
+  // Handle redirect after successful registration
+  useEffect(() => {
+    if (shouldRedirect) {
+      console.log('Registration successful, initiating redirect to login...');
+      // Use a more reliable navigation approach
+      const timer = setTimeout(() => {
+        try {
+          console.log('Attempting navigation to login page...');
+          // Try push first
+          router.push('/auth/login');
+          console.log('Navigation successful with push');
+        } catch (error) {
+          console.log('Push navigation failed, trying replace:', error);
+          // Fallback to replace if push fails
+          try {
+            router.replace('/auth/login');
+            console.log('Navigation successful with replace');
+          } catch (replaceError) {
+            console.log('Replace navigation also failed:', replaceError);
+            // Last resort: try to navigate programmatically
+            if (typeof window !== 'undefined') {
+              console.log('Using window.location.href as fallback');
+              window.location.href = '/auth/login';
+            }
+          }
+        }
+        setShouldRedirect(false);
+      }, 200);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [shouldRedirect, router]);
 
   return (
     <SafeAreaView style={styles.container}>
