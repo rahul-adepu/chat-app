@@ -32,7 +32,6 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [conversationId, setConversationId] = useState(null);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
-  const [otherUserTypingName, setOtherUserTypingName] = useState('');
   const [isUserTyping, setIsUserTyping] = useState(false); // Track if current user is typing
   
   const flatListRef = useRef(null);
@@ -199,10 +198,9 @@ export default function ChatScreen() {
     }
   };
 
-  const handleUserTyping = ({ userId: typingUserId, username: typingUsername, isTyping, conversationId: typingConversationId }) => {
+  const handleUserTyping = ({ userId: typingUserId, isTyping, conversationId: typingConversationId }) => {
     if (typingConversationId === conversationId && typingUserId !== user.id) {
       setOtherUserTyping(isTyping);
-      setOtherUserTypingName(isTyping ? typingUsername : '');
     }
   };
 
@@ -367,27 +365,16 @@ export default function ChatScreen() {
             <View style={styles.statusRow}>
               <View style={[
                 styles.statusDot,
-                { backgroundColor: isOnline === 'true' ? '#4CAF50' : '#9E9E9E' }
+                { backgroundColor: otherUserTyping ? '#FF9500' : (isOnline === 'true' ? '#4CAF50' : '#9E9E9E') }
               ]} />
               <Text style={styles.statusText}>
-                {isOnline === 'true' ? 'Online' : 'Offline'}
+                {otherUserTyping ? 'typing...' : (isOnline === 'true' ? 'Online' : 'Offline')}
               </Text>
             </View>
           </View>
         </View>
 
-        {otherUserTyping && (
-          <View style={styles.typingIndicator}>
-            <Text style={styles.typingText}>
-              {otherUserTypingName} is typing...
-            </Text>
-            <View style={styles.typingDots}>
-              <View style={[styles.dot, styles.dot1]} />
-              <View style={[styles.dot, styles.dot2]} />
-              <View style={[styles.dot, styles.dot3]} />
-            </View>
-          </View>
-        )}
+
 
         <FlatList
           ref={flatListRef}
@@ -473,13 +460,7 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 5 },
   statusText: { fontSize: 12, color: '#8E8E93' },
-  typingIndicator: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E5EA' },
-  typingText: { fontSize: 14, color: '#8E8E93', marginRight: 10 },
-  typingDots: { flexDirection: 'row', alignItems: 'center' },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#8E8E93', marginHorizontal: 1 },
-  dot1: { opacity: 0.4 },
-  dot2: { opacity: 0.7 },
-  dot3: { opacity: 1 },
+
   messagesList: { paddingVertical: 10, flexGrow: 1 },
   messageContainer: { marginVertical: 8, paddingHorizontal: 20 },
   ownMessage: { alignItems: 'flex-end' },

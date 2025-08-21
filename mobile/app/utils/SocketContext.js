@@ -26,7 +26,7 @@ export const SocketProvider = ({ children }) => {
         return;
       }
 
-      const newSocket = io('http://192.168.1.107:5050', {
+      const newSocket = io('http://192.168.1.104:5050', {
         auth: {
           token: token
         },
