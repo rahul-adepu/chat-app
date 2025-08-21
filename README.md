@@ -84,8 +84,8 @@ npm install
 Create a `.env` file in the `mobile/` directory:
 ```env
 # API Configuration
-REACT_APP_API_URL=http://yourWifiIpAddress:backendPortNumber
-REACT_APP_SOCKET_URL=http://yourWifiIpAddress:backendPortNumber
+EXPO_PUBLIC_API_URL=http://yourWifiIpAddress:backendPortNumber
+EXPO_PUBLIC_SOCKET_URL=http://yourWifiIpAddress:backendPortNumber
 
 ```
 
@@ -216,8 +216,8 @@ Authorization: Bearer <jwt-token>
 #### Mobile (.env)
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `REACT_APP_API_URL` | Backend API URL | `http://yourWifiIpAddress:backendPortNumber` |
-| `REACT_APP_SOCKET_URL` | Socket.IO server URL | `http:/yourWifiIpAddress:backendPortNumber` |
+| `EXPO_PUBLIC_API_URL` | Backend API URL | `http://yourWifiIpAddress:backendPortNumber` |
+| `EXPO_PUBLIC_SOCKET_URL` | Socket.IO server URL | `http:yourWifiIpAddress:backendPortNumber` |
 
 
 
