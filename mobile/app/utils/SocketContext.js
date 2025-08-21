@@ -33,8 +33,6 @@ export const SocketProvider = ({ children }) => {
         return;
       }
 
-      console.log('Creating new socket connection for user:', user.username);
-      
       const newSocket = io('http://192.168.1.104:5050', {
         auth: {
           token: token
@@ -44,12 +42,10 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('connect', () => {
-        console.log('Socket connected for user:', user.username);
         setIsConnected(true);
       });
 
       newSocket.on('disconnect', () => {
-        console.log('Socket disconnected for user:', user.username);
         setIsConnected(false);
       });
 
@@ -64,74 +60,53 @@ export const SocketProvider = ({ children }) => {
 
       setSocket(newSocket);
 
-      return () => {
-        if (newSocket) {
-          console.log('Cleaning up socket for user:', user.username);
-          newSocket.close();
+              return () => {
+          if (newSocket) {
+            newSocket.close();
+          }
+        };
+      } else {
+        if (socket) {
+          socket.close();
+          setSocket(null);
+          setIsConnected(false);
         }
-      };
-    } else {
-      // Clear socket when not authenticated
-      console.log('User not authenticated, clearing socket');
-      if (socket) {
-        socket.close();
-        setSocket(null);
-        setIsConnected(false);
       }
-    }
   }, [isAuthenticated, user?.id]); // Changed dependency to user.id for more precise updates
 
   const joinConversation = (conversationId) => {
     if (socket && (isConnected || socket.connected)) {
-      console.log('Joining conversation:', conversationId);
       socket.emit('join:conversation', conversationId);
-    } else {
-      console.log('Cannot join conversation - socket not ready');
     }
   };
 
   const leaveConversation = (conversationId) => {
     if (socket && (isConnected || socket.connected)) {
-      console.log('Leaving conversation:', conversationId);
       socket.emit('leave:conversation', conversationId);
-    } else {
-      console.log('Cannot leave conversation - socket not ready');
     }
   };
 
   const sendMessage = (conversationId, content, messageType = 'text', clientTempId) => {
     if (socket && (isConnected || socket.connected)) {
-      console.log('Sending message to conversation:', conversationId);
       socket.emit('message:send', { conversationId, content, messageType, clientTempId });
-    } else {
-      console.log('Cannot send message - socket not ready');
     }
   };
 
   const sendTypingIndicator = (conversationId, isTyping) => {
     if (socket && (isConnected || socket.connected)) {
-      console.log('Sending typing indicator:', isTyping, 'for conversation:', conversationId);
       socket.emit('message:typing', { conversationId, isTyping });
-    } else {
-      console.log('Cannot send typing indicator - socket not ready');
     }
   };
 
   const markMessageAsRead = (conversationId, messageId) => {
     if (socket && isConnected) {
-      console.log('Marking message as read:', messageId);
       socket.emit('message:read', { conversationId, messageId });
-    } else {
-      console.log('Cannot mark message as read - socket not ready');
     }
   };
 
   const markConversationAsRead = (conversationId) => {
     if (socket && isConnected) {
-      console.log('Marking conversation as read:', conversationId);
       socket.emit('conversation:markAllRead', { conversationId });
-    } else {
-      console.log('Cannot mark conversation as read - socket not ready');
     }
   };
 

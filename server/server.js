@@ -23,10 +23,10 @@ app.use("/conversations", conversationsRoutes);
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
+  .then(() => {})
   .catch((err) => console.error(err));
 
 const io = setupSocket(server);
 
 const PORT = process.env.PORT || 5060;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => {});

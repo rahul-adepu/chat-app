@@ -7,19 +7,13 @@ const router = express.Router();
 
 router.get('/', auth, async (req, res) => {
   try {
-    console.log('Fetching users for user ID:', req.user.id);
-    
     const users = await User.find({ _id: { $ne: req.user.id } })
       .select('-password')
       .lean();
 
-    console.log('Found users:', users.length);
-
     const conversations = await Conversation.find({
       participants: req.user.id
     }).populate('lastMessage', 'content createdAt');
-
-    console.log('Found conversations:', conversations.length);
 
     const usersWithConversations = users.map(user => {
       const conversation = conversations.find(conv => 
@@ -36,7 +30,6 @@ router.get('/', auth, async (req, res) => {
       };
     });
 
-    console.log('Users with conversations processed successfully');
     res.json(usersWithConversations);
   } catch (error) {
     console.error('Error fetching users:', error);

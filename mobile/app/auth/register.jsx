@@ -43,28 +43,20 @@ export default function RegisterScreen() {
     try {
       const result = await register(username.trim(), email.trim(), password);
       
-      // Clear form fields
       setUsername('');
       setEmail('');
       setPassword('');
       setConfirmPassword('');
       
-      // Show success message and set redirect flag
-      // In web environments, alerts can be unreliable, so we set redirect immediately
       setShouldRedirect(true);
       
-      // Show alert for user feedback
       if (isWeb) {
-        // In web, show a simple alert and redirect immediately
         alert(result.message);
       } else {
-        // In mobile, use the native Alert component
         Alert.alert('Success', result.message, [
           { 
             text: 'OK', 
-            onPress: () => {
-              // Alert dismissed, but redirect should already be happening
-            }
+            onPress: () => {}
           }
         ]);
       }
@@ -80,28 +72,16 @@ export default function RegisterScreen() {
     }
   };
 
-  // Handle redirect after successful registration
   useEffect(() => {
     if (shouldRedirect) {
-      console.log('Registration successful, initiating redirect to login...');
-      // Use a more reliable navigation approach
       const timer = setTimeout(() => {
         try {
-          console.log('Attempting navigation to login page...');
-          // Try push first
           router.push('/auth/login');
-          console.log('Navigation successful with push');
         } catch (error) {
-          console.log('Push navigation failed, trying replace:', error);
-          // Fallback to replace if push fails
           try {
             router.replace('/auth/login');
-            console.log('Navigation successful with replace');
           } catch (replaceError) {
-            console.log('Replace navigation also failed:', replaceError);
-            // Last resort: try to navigate programmatically
             if (typeof window !== 'undefined') {
-              console.log('Using window.location.href as fallback');
               window.location.href = '/auth/login';
             }
           }

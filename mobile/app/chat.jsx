@@ -32,19 +32,18 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [conversationId, setConversationId] = useState(null);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
-  const [isUserTyping, setIsUserTyping] = useState(false); // Track if current user is typing
+  const [isUserTyping, setIsUserTyping] = useState(false);
   
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const pendingMessages = useRef(new Map());
-  const typingRefreshIntervalRef = useRef(null); // For continuous typing refresh
+  const typingRefreshIntervalRef = useRef(null);
 
   useEffect(() => {
     if (conversationId) {
       joinConversation(conversationId);
       return () => {
         leaveConversation(conversationId);
-        // Clear typing indicator when leaving conversation
         if (typingTimeoutRef.current) {
           clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = null;
@@ -59,7 +58,6 @@ export default function ChatScreen() {
     }
   }, [conversationId]);
 
-  // Cleanup typing indicator when component unmounts
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) {
@@ -79,17 +77,13 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (socket && conversationId) {
-      console.log('Setting up socket event listeners for chat screen');
-      
       socket.on('message:new', handleNewMessage);
       socket.on('message:status', handleMessageStatus);
       socket.on('user:typing', handleUserTyping);
       socket.on('message:sent', handleMessageSent);
       socket.on('user:status', handleUserStatus);
       
-      // Handle socket reconnection
       socket.on('connect', () => {
-        console.log('Socket reconnected in chat, rejoining conversation');
         if (conversationId) {
           joinConversation(conversationId);
           markConversationAsRead(conversationId);
@@ -97,7 +91,6 @@ export default function ChatScreen() {
       });
 
       return () => {
-        console.log('Cleaning up socket event listeners for chat screen');
         socket.off('message:new');
         socket.off('message:status');
         socket.off('user:typing');
@@ -108,19 +101,15 @@ export default function ChatScreen() {
     }
   }, [socket, conversationId]);
 
-  // Handle socket connection status changes
   useEffect(() => {
     if (socket && isConnected && conversationId) {
-      console.log('Socket connected in chat, marking conversation as read');
       markConversationAsRead(conversationId);
       markAllMessagesAsReadAPI(conversationId);
     }
   }, [socket, isConnected, conversationId]);
 
-  // Handle socket reconnection specifically
   useEffect(() => {
     if (socket && isConnected && conversationId) {
-      console.log('Socket reconnected, ensuring conversation is joined and marked as read');
       joinConversation(conversationId);
       markConversationAsRead(conversationId);
     }
@@ -195,55 +184,37 @@ export default function ChatScreen() {
   }, [messages]);
 
   const handleNewMessage = (message) => {
-    console.log('New message received:', { 
-      messageId: message._id, 
-      content: message.content, 
-      sender: message.sender.username,
-      status: message.status 
-    });
-    
     const { _id, clientTempId } = message;
     if (clientTempId && pendingMessages.current.has(clientTempId)) {
-      console.log('Updating pending message with clientTempId:', clientTempId);
       setMessages(prev => prev.map(msg => (msg._id === clientTempId ? message : msg)));
       pendingMessages.current.delete(clientTempId);
       return;
     }
     if (pendingMessages.current.has(_id)) {
-      console.log('Updating pending message with _id:', _id);
       setMessages(prev => prev.map(msg => (msg._id === _id ? message : msg)));
       pendingMessages.current.delete(_id);
       return;
     }
     
-    console.log('Adding new message to conversation');
     setMessages(prev => [...prev, message]);
     
     if (message.sender._id !== user.id && conversationId) {
-      console.log('Marking received message as read');
       markMessageAsRead(conversationId, message._id);
     }
   };
 
   const handleMessageSent = ({ messageId, status }) => {
-    console.log('Message sent status received:', { messageId, status });
-    
     setMessages(prev => {
-      const updatedMessages = prev.map(msg => 
-        msg._id === messageId ? { ...msg, status } : msg
-      );
-      
-      // Log the updated message
-      const updatedMessage = updatedMessages.find(msg => msg._id === messageId);
-      if (updatedMessage) {
-        console.log('Message sent status updated:', {
-          messageId,
-          oldStatus: prev.find(msg => msg._id === messageId)?.status,
-          newStatus: updatedMessage.status,
-          content: updatedMessage.content
-        });
-      }
-      
+      const updatedMessages = prev.map(msg => {
+        if (msg._id === messageId) {
+          // Don't downgrade status from 'read' to 'delivered' or 'sent'
+          const currentStatus = msg.status;
+          const newStatus = (currentStatus === 'read' && ['delivered', 'sent'].includes(status)) ? 'read' : status;
+          
+          return { ...msg, status: newStatus };
+        }
+        return msg;
+      });
       return updatedMessages;
     });
     
@@ -259,7 +230,6 @@ export default function ChatScreen() {
   };
 
   const handleUserStatus = ({ userId: statusUserId, isOnline }) => {
-    // Handle user status updates if needed
   };
 
   const handleTyping = (text) => {
@@ -267,29 +237,23 @@ export default function ChatScreen() {
   
     if (!conversationId) return;
   
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
   
-    // If user is typing, always send typing indicator (not only on first char)
     if (text.length > 0) {
       if (!isUserTyping) {
-        // Only set to true the first time
         setIsUserTyping(true);
         sendTypingIndicator(conversationId, true);
       } else {
-        // Refresh typing indicator while still typing
         sendTypingIndicator(conversationId, true);
       }
   
-      // Reset the timeout: if no input after 3s, mark as stopped
       typingTimeoutRef.current = setTimeout(() => {
         setIsUserTyping(false);
         sendTypingIndicator(conversationId, false);
       }, 3000);
     } else {
-      // If text cleared, stop typing immediately
       setIsUserTyping(false);
       sendTypingIndicator(conversationId, false);
     }
@@ -300,19 +264,16 @@ export default function ChatScreen() {
     if (!newMessage.trim() || !conversationId || !isConnected) return;
     
     
-    // Clear typing indicator immediately when sending message
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
     
-    // Clear typing refresh interval
     if (typingRefreshIntervalRef.current) {
       clearInterval(typingRefreshIntervalRef.current);
       typingRefreshIntervalRef.current = null;
     }
     
-    // Clear typing state
     setIsUserTyping(false);
     
     sendTypingIndicator(conversationId, false);
@@ -360,28 +321,22 @@ export default function ChatScreen() {
   };
 
   const handleMessageStatus = ({ messageId, status, readBy, readAt }) => {
-    console.log('Message status update received:', { messageId, status, readBy, readAt });
-    
     setMessages(prev => {
-      const updatedMessages = prev.map(msg =>
-        msg._id === messageId ? { 
-          ...msg, 
-          status,
-          readBy: readBy ? [...(msg.readBy || []), readBy] : msg.readBy,
-          readAt: readAt || msg.readAt
-        } : msg
-      );
-      
-      // Log the updated message
-      const updatedMessage = updatedMessages.find(msg => msg._id === messageId);
-      if (updatedMessage) {
-        console.log('Message status updated:', {
-          messageId,
-          oldStatus: prev.find(msg => msg._id === messageId)?.status,
-          newStatus: updatedMessage.status,
-          content: updatedMessage.content
-        });
-      }
+      const updatedMessages = prev.map(msg => {
+        if (msg._id === messageId) {
+          // Don't downgrade status from 'read' to 'delivered'
+          const currentStatus = msg.status;
+          const newStatus = (currentStatus === 'read' && status === 'delivered') ? 'read' : status;
+          
+          return { 
+            ...msg, 
+            status: newStatus,
+            readBy: readBy ? [...(msg.readBy || []), readBy] : msg.readBy,
+            readAt: readAt || msg.readAt
+          };
+        }
+        return msg;
+      });
       
       return updatedMessages;
     });
@@ -400,13 +355,7 @@ export default function ChatScreen() {
     }
   };
 
-  // Monitor typing indicator state changes
-  useEffect(() => {
-  }, [isUserTyping, conversationId]);
 
-  // Monitor conversation ID changes
-  useEffect(() => {
-  }, [conversationId]);
 
   if (loading) {
     return (

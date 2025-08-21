@@ -11,19 +11,17 @@ export const setupSocket = (server) => {
   });
 
   const connectedUsers = new Map();
-  const typingUsers = new Map(); // Track typing status per conversation
+  const typingUsers = new Map();
+  const pendingDeliveryUpdates = new Map(); // Track pending delivery status updates
 
-  // Function to mark pending messages as delivered when user comes online
   const markPendingMessagesAsDelivered = async (userId) => {
     try {
       const Message = (await import('./models/Message.js')).default;
       const Conversation = (await import('./models/Conversation.js')).default;
       
-      // Find all conversations where this user is a participant
       const conversations = await Conversation.find({ participants: userId });
       
       for (const conversation of conversations) {
-        // Find all sent messages that haven't been delivered to this user
         const pendingMessages = await Message.find({
           conversationId: conversation._id,
           sender: { $ne: userId },
@@ -31,7 +29,6 @@ export const setupSocket = (server) => {
         });
         
         if (pendingMessages.length > 0) {
-          // Mark all pending messages as delivered
           await Message.updateMany(
             { _id: { $in: pendingMessages.map(m => m._id) } },
             { 
@@ -40,7 +37,6 @@ export const setupSocket = (server) => {
             }
           );
           
-          // Emit delivered status for each message
           pendingMessages.forEach(message => {
             const senderSocketId = connectedUsers.get(message.sender.toString())?.socketId;
             if (senderSocketId) {
@@ -51,8 +47,6 @@ export const setupSocket = (server) => {
               });
             }
           });
-          
-          console.log(`Marked ${pendingMessages.length} messages as delivered for user ${userId}`);
         }
       }
     } catch (error) {
@@ -94,23 +88,21 @@ export const setupSocket = (server) => {
     await User.findByIdAndUpdate(socket.userId, { isOnline: true });
     socket.broadcast.emit('user:status', { userId: socket.userId, isOnline: true });
 
-    // Mark pending messages as delivered when user comes online
     markPendingMessagesAsDelivered(socket.userId);
 
     socket.on('join:conversation', (conversationId) => {
       socket.join(conversationId);
     });
 
-    socket.on('leave:conversation', (conversationId) => {
-      socket.leave(conversationId);
-      // Clear typing status when leaving conversation
-      if (typingUsers.has(conversationId)) {
-        typingUsers.get(conversationId).delete(socket.userId);
-        if (typingUsers.get(conversationId).size === 0) {
-          typingUsers.delete(conversationId);
+          socket.on('leave:conversation', (conversationId) => {
+        socket.leave(conversationId);
+        if (typingUsers.has(conversationId)) {
+          typingUsers.get(conversationId).delete(socket.userId);
+          if (typingUsers.get(conversationId).size === 0) {
+            typingUsers.delete(conversationId);
+          }
         }
-      }
-    });
+      });
 
     socket.on('message:typing', ({ conversationId, isTyping }) => {
       if (!typingUsers.has(conversationId)) {
@@ -129,7 +121,6 @@ export const setupSocket = (server) => {
         }
       }
 
-      // Emit typing status to other users in the conversation
       socket.to(conversationId).emit('user:typing', {
         userId: socket.userId,
         username: socket.username,
@@ -137,7 +128,6 @@ export const setupSocket = (server) => {
         conversationId
       });
 
-      // Auto-clear typing status after 3 seconds of inactivity
       if (isTyping) {
         setTimeout(() => {
           if (typingUsers.has(conversationId) && 
@@ -209,44 +199,41 @@ export const setupSocket = (server) => {
         io.to(conversationId).emit('message:new', populatedMessage);
         socket.emit('message:sent', { messageId: message._id, status: 'sent', conversationId, clientTempId });
         
-        // Check if recipient is online to determine delivery status
         const otherParticipant = conversation.participants.find(p => p.toString() !== socket.userId);
         const recipientSocketId = connectedUsers.get(otherParticipant.toString())?.socketId;
         const isRecipientOnline = !!recipientSocketId;
         
         if (isRecipientOnline) {
-          // Recipient is online, mark as delivered after a short delay to show proper flow
-          setTimeout(async () => {
+          const deliveryTimeoutId = setTimeout(async () => {
             try {
-              await Message.findByIdAndUpdate(message._id, { 
-                status: 'delivered',
-                deliveredAt: new Date()
-              });
+              // Check if message is already read before marking as delivered
+              const currentMessage = await Message.findById(message._id);
+              if (currentMessage && currentMessage.status !== 'read') {
+                await Message.findByIdAndUpdate(message._id, { 
+                  status: 'delivered',
+                  deliveredAt: new Date()
+                });
+                
+                // Emit delivered status to sender
+                socket.emit('message:status', { 
+                  messageId: message._id, 
+                  status: 'delivered',
+                  conversationId,
+                  clientTempId
+                });
+              }
               
-              // Emit delivered status to sender
-              socket.emit('message:status', { 
-                messageId: message._id, 
-                status: 'delivered',
-                conversationId,
-                clientTempId
-              });
-              
-              console.log('Message delivered to online recipient:', {
-                messageId: message._id,
-                status: 'delivered',
-                conversationId
-              });
+              // Remove from pending updates
+              pendingDeliveryUpdates.delete(message._id);
             } catch (error) {
               console.error('Error updating message status to delivered:', error);
+              pendingDeliveryUpdates.delete(message._id);
             }
-          }, 1000); // Increased delay to 1 second to show proper status flow
+          }, 1000);
+          
+          // Store the timeout ID for potential cancellation
+          pendingDeliveryUpdates.set(message._id, deliveryTimeoutId);
         } else {
-          // Recipient is offline, keep status as 'sent'
-          console.log('Message sent but recipient is offline:', {
-            messageId: message._id,
-            status: 'sent',
-            conversationId
-          });
         }
 
       } catch (error) {
@@ -263,6 +250,13 @@ export const setupSocket = (server) => {
         const message = await Message.findById(messageId);
         
         if (message && message.sender.toString() !== socket.userId) {
+          // Cancel any pending delivery status update
+          const pendingDeliveryId = pendingDeliveryUpdates.get(messageId);
+          if (pendingDeliveryId) {
+            clearTimeout(pendingDeliveryId);
+            pendingDeliveryUpdates.delete(messageId);
+          }
+          
           message.isRead = true;
           message.readAt = new Date();
           message.status = 'read';
@@ -271,14 +265,8 @@ export const setupSocket = (server) => {
           }
           await message.save();
 
-          console.log('Message marked as read:', {
-            messageId,
-            status: 'read',
-            readBy: socket.userId,
-            conversationId
-          });
 
-          // Emit read status to all participants in the conversation
+
           io.to(conversationId).emit('message:status', {
             messageId,
             status: 'read',
@@ -295,8 +283,7 @@ export const setupSocket = (server) => {
               conversation.unreadCount.set(socket.userId, currentUnreadCount - 1);
               await conversation.save();
               
-              // Emit unread count updates to all participants
-              conversation.participants.forEach(participantId => {
+                        conversation.participants.forEach(participantId => {
                 const participantSocketId = connectedUsers.get(participantId.toString())?.socketId;
                 if (participantSocketId) {
                   io.to(participantSocketId).emit('conversation:unreadUpdate', {
@@ -322,13 +309,10 @@ export const setupSocket = (server) => {
       socket.to(conversationId).emit('user:typing', { userId: socket.userId, username: socket.username, isTyping: false, conversationId });
     });
 
-    // Test event handler
     socket.on('test:ping', (data) => {
-      console.log('Test ping received from client:', data);
       socket.emit('test:pong', { message: 'Hello from server', timestamp: Date.now() });
     });
 
-    // Handle bulk message read (when opening chat)
     socket.on('conversation:markAllRead', async (data) => {
       const { conversationId } = data;
       
@@ -336,16 +320,12 @@ export const setupSocket = (server) => {
         const Message = (await import('./models/Message.js')).default;
         const Conversation = (await import('./models/Conversation.js')).default;
         
-        // Find all unread messages that will be marked as read
         const unreadMessages = await Message.find({
           conversationId, 
           sender: { $ne: socket.userId },
           isRead: false 
         });
 
-        console.log(`Found ${unreadMessages.length} unread messages to mark as read for conversation ${conversationId}, user ${socket.userId}`);
-        
-        // Mark all unread messages as read for the current user
         const result = await Message.updateMany(
           { 
             conversationId, 
@@ -362,11 +342,14 @@ export const setupSocket = (server) => {
           }
         );
 
-        console.log(`Marking all messages as read for conversation ${conversationId}, user ${socket.userId}, modified: ${result.modifiedCount}`);
-        
-        // Emit read status for each message to notify the original senders
         unreadMessages.forEach(message => {
-          // Emit read status to all participants in the conversation
+          // Cancel any pending delivery status update
+          const pendingDeliveryId = pendingDeliveryUpdates.get(message._id);
+          if (pendingDeliveryId) {
+            clearTimeout(pendingDeliveryId);
+            pendingDeliveryUpdates.delete(message._id);
+          }
+          
           io.to(conversationId).emit('message:status', {
             messageId: message._id,
             status: 'read',
@@ -374,24 +357,17 @@ export const setupSocket = (server) => {
             readAt: new Date(),
             conversationId
           });
-          
-          console.log(`Emitted read status for message ${message._id} to conversation ${conversationId}`);
         });
         
-        // Always update conversation unread count and emit update, regardless of whether messages were modified
         const conversation = await Conversation.findById(conversationId);
         if (conversation) {
           conversation.unreadCount.set(socket.userId, 0);
           await conversation.save();
           
-          console.log(`Updated unread count for user ${socket.userId} to 0 in conversation ${conversationId}`);
-          
-          // Emit unread count update to all participants
           conversation.participants.forEach(participantId => {
             const participantSocketId = connectedUsers.get(participantId.toString())?.socketId;
             if (participantSocketId) {
               const unreadCount = conversation.unreadCount.get(participantId.toString()) || 0;
-              console.log(`Emitting unread update to participant ${participantId}: ${unreadCount}`);
               io.to(participantSocketId).emit('conversation:unreadUpdate', {
                 conversationId,
                 unreadCount,
@@ -414,7 +390,6 @@ export const setupSocket = (server) => {
           if (users.size === 0) {
             typingUsers.delete(conversationId);
           } else {
-            // Notify other users that this user stopped typing
             socket.to(conversationId).emit('user:typing', {
               userId: socket.userId,
               username: socket.username,
@@ -423,6 +398,12 @@ export const setupSocket = (server) => {
             });
           }
         }
+      }
+      
+      // Clear any pending delivery updates for this user's messages
+      for (const [messageId, timeoutId] of pendingDeliveryUpdates.entries()) {
+        clearTimeout(timeoutId);
+        pendingDeliveryUpdates.delete(messageId);
       }
       
       connectedUsers.delete(socket.userId);

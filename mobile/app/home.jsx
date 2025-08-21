@@ -49,49 +49,35 @@ export default function HomeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      // Refresh users when screen comes into focus (e.g., returning from chat)
       if (isConnected) {
         fetchUsers();
       }
     }, [isConnected])
   );
 
-  // Also clear unread counts when returning from chat (additional safety)
   useFocusEffect(
     React.useCallback(() => {
-      // This will run every time the screen comes into focus
     }, [])
   );
 
-  // Refresh users when authentication state changes (login/logout)
   useEffect(() => {
-    console.log('Auth state changed:', authState, 'Socket connected:', isConnected);
     if (authState === 'authenticated' && isConnected) {
-      console.log('User authenticated and socket connected, fetching users');
       fetchUsers();
-    } else if (authState === 'unauthenticated') {
-      console.log('User logged out, clearing users');
-      // Clear users when logging out
-      setUsers([]);
-      setLoading(false);
-    }
+          } else if (authState === 'unauthenticated') {
+        setUsers([]);
+        setLoading(false);
+      }
   }, [authState, isConnected]);
 
-  // Handle socket connection changes
   useEffect(() => {
     if (isConnected && socket) {
-      console.log('Socket connected, refreshing user status');
-      // Refresh users immediately when socket connects to get latest status
       fetchUsers();
     }
   }, [isConnected, socket]);
 
-  // Handle app state changes (background/foreground)
   useEffect(() => {
     const handleAppStateChange = (nextAppState) => {
       if (nextAppState === 'active' && isConnected) {
-        console.log('App came to foreground, refreshing user status');
-        // App came to foreground, refresh user status
         fetchUsers();
       }
     };
@@ -100,10 +86,8 @@ export default function HomeScreen() {
     return () => subscription?.remove();
   }, [isConnected]);
 
-  // Cleanup effect for logout
   useEffect(() => {
     if (authState === 'unauthenticated') {
-      console.log('User logged out, cleaning up socket listeners');
       if (socket) {
         socket.off('user:status');
         socket.off('conversation:unreadUpdate');
@@ -124,34 +108,22 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (socket && isConnected) {
-      console.log('Setting up socket event listeners for home screen');
-      
-      // Set up event listeners
       socket.on('user:status', handleUserStatus);
       socket.on('conversation:unreadUpdate', handleUnreadUpdate);
       
-      // Add a test listener to verify socket is working
       socket.on('connect', () => {
-        console.log('Socket reconnected, refreshing users');
         fetchUsers();
       });
 
-      // Test response listener
       socket.on('test:pong', (data) => {
-        // Test response received
       });
 
-      // Listen for new messages to update unread counts
       socket.on('message:new', handleNewMessage);
-      
-      // Listen for message status updates
       socket.on('message:status', handleMessageStatusUpdate);
       
-      // Refresh users immediately when socket connects to get latest status
       fetchUsers();
 
       return () => {
-        console.log('Cleaning up socket event listeners for home screen');
         socket.off('user:status');
         socket.off('conversation:unreadUpdate');
         socket.off('connect');
@@ -172,8 +144,6 @@ export default function HomeScreen() {
   };
 
   const handleNewMessage = (message) => {
-    
-    // Update the user's last message and unread count
     setUsers(prev => prev.map(user => {
       if (user.conversationId === message.conversationId && user._id !== message.sender._id) {
         return {
@@ -187,21 +157,14 @@ export default function HomeScreen() {
     }));
   };
 
-  // Handle message status updates (delivered, read)
   const handleMessageStatusUpdate = ({ messageId, status, conversationId, readBy }) => {
-    
     if (status === 'read') {
-      // When a message is read, we don't need to update unread count here
-      // The unread count will be updated by the conversation:unreadUpdate event
     }
   };
 
   const handleMessageStatus = ({ messageId, status, readBy }) => {
     if (status === 'read' && readBy === user.id) {
-      // Update unread count when message is read
       setUsers(prev => prev.map(userItem => {
-        // Find the conversation and update unread count
-        // This is a simplified approach - you might want to implement a more sophisticated solution
         return userItem;
       }));
     }
@@ -214,7 +177,6 @@ export default function HomeScreen() {
       if (u.conversationId === conversationId) {
         const updatedUser = { ...u, unreadCount };
         
-        // If this is a new message, also update the last message preview
         if (senderId && senderUsername && action !== 'markAllRead') {
           updatedUser.lastMessage = {
             content: `New message from ${senderUsername}`,
@@ -229,7 +191,6 @@ export default function HomeScreen() {
     }));
   };
 
-  // Force clear unread count for a specific conversation
   const forceClearUnreadCount = (conversationId) => {
     setUsers(prev => prev.map(u => {
       if (u.conversationId === conversationId) {
@@ -240,14 +201,11 @@ export default function HomeScreen() {
   };
 
   const handleUserPress = (username, userId, isOnline) => {
-    // Find the user and conversation
     const selectedUser = users.find(u => u._id === userId);
     
     if (selectedUser && selectedUser.conversationId) {
-      // Force clear unread count immediately
       forceClearUnreadCount(selectedUser.conversationId);
       
-      // Also emit the socket event immediately to ensure it's processed
       if (socket && isConnected) {
         socket.emit('conversation:markAllRead', { conversationId: selectedUser.conversationId });
       }
@@ -385,7 +343,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F2F2F7',
-    paddingTop: Platform.OS === 'android' ? 25 : 0 // Add top padding for Android notification bar
+    paddingTop: Platform.OS === 'android' ? 25 : 0
   },
   header: {
     flexDirection: 'row',
@@ -396,7 +354,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
-    marginTop: Platform.OS === 'android' ? 10 : 0 // Additional margin for Android
+    marginTop: Platform.OS === 'android' ? 10 : 0
   },
   title: {
     fontSize: 28,
